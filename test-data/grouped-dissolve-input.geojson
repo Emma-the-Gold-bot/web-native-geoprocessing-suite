@@ -1,0 +1,33 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": 1, "zone": "north", "label": "north-west" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-122.4200, 37.7800], [-122.4188, 37.7800], [-122.4188, 37.7812], [-122.4200, 37.7812], [-122.4200, 37.7800]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": 2, "zone": "north", "label": "north-east" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-122.4188, 37.7800], [-122.4176, 37.7800], [-122.4176, 37.7812], [-122.4188, 37.7812], [-122.4188, 37.7800]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": 3, "zone": "south", "label": "south" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-122.4200, 37.7778], [-122.4182, 37.7778], [-122.4182, 37.7792], [-122.4200, 37.7792], [-122.4200, 37.7778]]]
+      }
+    }
+  ],
+  "crs": {
+    "type": "name",
+    "properties": { "name": "EPSG:4326" }
+  }
+}

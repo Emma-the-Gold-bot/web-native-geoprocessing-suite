@@ -1,0 +1,13 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": 1, "name": "West Polygon" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-122.52, 37.70], [-122.48, 37.70], [-122.48, 37.74], [-122.52, 37.74], [-122.52, 37.70]]]
+      }
+    }
+  ]
+}

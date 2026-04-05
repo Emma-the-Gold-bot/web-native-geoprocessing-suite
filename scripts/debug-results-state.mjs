@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+await page.goto('http://127.0.0.1:4174/', { waitUntil: 'domcontentloaded' });
+await page.locator('input[type="file"]').setInputFiles('test-data/example.parquet');
+await page.getByText(/Import review/i).waitFor();
+await page.getByRole('button', { name: /Import into workspace/i }).click();
+await page.getByRole('button', { name: /example.*source/i }).waitFor({ timeout: 20000 });
+await page.getByRole('button', { name: /^SQL$/i }).click();
+await page.locator('textarea').fill('SELECT id, name, pop_est FROM example LIMIT 5');
+await page.getByRole('button', { name: /Run query/i }).click();
+await page.waitForTimeout(1500);
+await page.getByRole('button', { name: /^Results$/i }).click();
+await page.waitForTimeout(1000);
+console.log(await page.locator('.bottom-dock').textContent());
+await browser.close();

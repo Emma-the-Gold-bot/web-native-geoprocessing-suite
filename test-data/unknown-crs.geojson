@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": 1, "name": "Unknown A" },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-122.4194, 37.779]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": 2, "name": "Unknown B" },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-122.4094, 37.789]
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "id": 1, "name": "Mercator A" },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-13629605.08, 4548557.61]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "id": 2, "name": "Mercator B" },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-13628191.94, 4549654.56]
+      }
+    }
+  ],
+  "crs": {
+    "type": "name",
+    "properties": { "name": "EPSG:3857" }
+  }
+}

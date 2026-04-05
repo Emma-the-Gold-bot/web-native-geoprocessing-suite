@@ -1,0 +1,39 @@
+export {
+  runOperationValidations,
+  runOperationValidationBuckets,
+  runAndLogValidations,
+  runEnvelopeTests,
+  runAndLogEnvelopeTests,
+  validateBuffer,
+  validateCentroid,
+  validateDissolve,
+  validateReproject,
+  validateReprojectConfidencePropagation,
+  validateClipConfidencePropagation,
+  validateIntersectSuccess,
+  validateIntersectEmptyResult,
+} from './operation-validation-core';
+
+import {
+  runEnvelopeTests,
+  runOperationValidations,
+  runOperationValidationBuckets,
+} from './operation-validation-core';
+import { runProjValidation } from './spatial/proj-spike';
+
+interface GeoValidationExports {
+  runEnvelopeTests: typeof runEnvelopeTests;
+  runOperationValidations: typeof runOperationValidations;
+  runOperationValidationBuckets: typeof runOperationValidationBuckets;
+  runProjValidation: () => Promise<boolean>;
+}
+
+if (typeof window !== 'undefined') {
+  (window as unknown as { geoValidation: GeoValidationExports }).geoValidation = {
+    runEnvelopeTests,
+    runOperationValidations,
+    runOperationValidationBuckets,
+    runProjValidation,
+  };
+  console.log('[geoValidation] Exposed validation functions on window.geoValidation');
+}

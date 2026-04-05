@@ -1,0 +1,310 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #0b0f14;
+  color: #e8edf2;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr 320px;
+  grid-template-rows: 56px 1fr 260px;
+  grid-template-areas:
+    'topbar topbar topbar'
+    'left main right'
+    'left bottom right';
+  height: 100vh;
+  background: #0b0f14;
+}
+
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #1f2937;
+  background: #111827;
+}
+
+.left-rail, .right-panel, .bottom-dock {
+  background: #0f172a;
+  border-color: #1f2937;
+}
+
+.left-rail {
+  grid-area: left;
+  border-right: 1px solid #1f2937;
+  overflow: auto;
+  padding: 16px;
+}
+
+.main-pane {
+  grid-area: main;
+  position: relative;
+  background: #09101a;
+}
+
+.right-panel {
+  grid-area: right;
+  border-left: 1px solid #1f2937;
+  overflow: auto;
+  padding: 16px;
+}
+
+.bottom-dock {
+  grid-area: bottom;
+  border-top: 1px solid #1f2937;
+  overflow: auto;
+  padding: 12px;
+}
+
+.panel-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.artifact-list, .history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card {
+  background: #111827;
+  border: 1px solid #243041;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.card.selected {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2) inset;
+}
+
+.card.danger {
+  border-color: #7f1d1d;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.badge.warning { background: #3f2a11; color: #fbbf24; }
+.badge.source { background: #10243d; color: #93c5fd; }
+.badge.derived { background: #1d2c14; color: #86efac; }
+.badge.info { background: #13283d; color: #93c5fd; }
+.badge.caution { background: #3f2a11; color: #fbbf24; }
+.badge.serious { background: #3f1d11; color: #fdba74; }
+.badge.blocking { background: #3a1212; color: #fca5a5; }
+.badge.active { background: #1d2c14; color: #86efac; }
+.badge.inherited { background: #2b1f3b; color: #d8b4fe; }
+.badge.historical { background: #1f2937; color: #cbd5e1; }
+.badge.known { background: #14532d; color: #86efac; }
+.badge.unknown { background: #451a03; color: #fdba74; }
+.badge.missing { background: #3a1212; color: #fca5a5; }
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.muted { color: #94a3b8; }
+.small { font-size: 12px; }
+
+.map-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* MapLibre adds .maplibregl-map and its stylesheet can override sizing defaults.
+   Keep the map pinned to the main pane so it cannot collapse to 0 height. */
+.map-container.maplibregl-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.bottom-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab {
+  border: 1px solid #243041;
+  background: #111827;
+  color: #cbd5e1;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.tab.active {
+  border-color: #60a5fa;
+  color: #eff6ff;
+}
+
+.table-wrap {
+  overflow: auto;
+  max-height: 100%;
+  border: 1px solid #243041;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #1f2937;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table-wrap tbody tr {
+  cursor: pointer;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.table-wrap tbody tr:hover {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.table-wrap tbody tr.focused-row {
+  background: #10243d;
+  box-shadow: inset 4px 0 0 #f59e0b, inset 0 0 0 1px rgba(245, 158, 11, 0.75);
+}
+
+.table-wrap tbody tr.focused-row td {
+  background: transparent;
+}
+
+.table-wrap tbody tr.focused-row:hover {
+  background: #13304f;
+}
+
+.inspection-focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  font-size: 12px;
+}
+
+.inspection-focus-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.18);
+  flex: 0 0 auto;
+}
+
+textarea.sql-editor {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  border-radius: 8px;
+  border: 1px solid #243041;
+  background: #0b1220;
+  color: #e5e7eb;
+  padding: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.primary {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.secondary {
+  border: 1px solid #334155;
+  background: transparent;
+  color: #cbd5e1;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.import-overlay {
+  position: absolute;
+  inset: 64px 24px auto 24px;
+  z-index: 20;
+  max-width: 760px;
+  background: rgba(2, 6, 23, 0.98);
+  border: 1px solid #243041;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.input-file {
+  width: 100%;
+}
+
+.code-block {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.operation-artifact-summary {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: #0f172a;
+  border-radius: 8px;
+  border: 1px solid #1e293b;
+}
+
+.operation-artifact-label {
+  color: #94a3b8;
+}
+
+.operation-contract-check {
+  padding: 10px;
+}
+
+.operation-output-semantics {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+.operation-output-semantics .muted {
+  color: #334155;
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web-native Geoprocessing Suite</title>
+    <!--
+      COI Service Worker for SharedArrayBuffer support (PROJ-WASM multi-threaded mode)
+      
+      This script enables COOP/COEP headers via service worker for environments
+      that don't support header configuration (e.g., GitHub Pages, some static hosts).
+      
+      REMOVE this script if your hosting provider supports custom headers:
+      - Vercel: vercel.json (already configured)
+      - Netlify: _headers (already configured)
+      - Self-hosted: configure nginx/apache with COOP/COEP headers
+      
+      The service worker will only register if crossOriginIsolated is false,
+      so it's safe to leave in place for all deployment targets.
+    -->
+    <script src="/coi-serviceworker.js"></script>
+    <!-- Note: src/main.tsx is handled by Vite (dev: serves directly, build: bundles to assets/) -->
+    <script type="module" src="/src/main.tsx"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "overlay_id": 1,
+        "zone": "central-overlay"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-122.4192, 37.7790],
+          [-122.4155, 37.7790],
+          [-122.4155, 37.7815],
+          [-122.4192, 37.7815],
+          [-122.4192, 37.7790]
+        ]]
+      }
+    }
+  ]
+}

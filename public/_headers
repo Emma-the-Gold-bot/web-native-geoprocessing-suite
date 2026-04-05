@@ -1,0 +1,6 @@
+# Netlify headers for COOP/COEP
+# Required for SharedArrayBuffer support (PROJ-WASM multi-threaded mode)
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
