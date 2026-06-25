@@ -67,11 +67,20 @@ export default function LayersPanel({
           const opacity = settings?.opacity ?? 1.0;
 
           return (
-            <button
+            <div
               key={artifact.id}
-              className={`card ${selectedArtifactId === artifact.id ? 'selected' : ''} ${artifact.kind === 'derived' ? 'card-derived' : ''}`}
+              className={`card card-button ${selectedArtifactId === artifact.id ? 'selected' : ''} ${artifact.kind === 'derived' ? 'card-derived' : ''}`}
               style={{ textAlign: 'left', padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-1)' }}
+              role="button"
+              tabIndex={0}
               onClick={() => { setSelectedArtifactId(artifact.id); setRightPanelOpen(true) }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setSelectedArtifactId(artifact.id)
+                  setRightPanelOpen(true)
+                }
+              }}
             >
               <div className="layer-row">
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -136,7 +145,7 @@ export default function LayersPanel({
                   </div>
                 )}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

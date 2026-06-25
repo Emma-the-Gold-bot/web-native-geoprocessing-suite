@@ -287,3 +287,130 @@ describe('LayersPanel — layer controls', () => {
     expect(screen.getAllByTitle('Move down (lower z-order)')).toHaveLength(1)
   })
 })
+
+// ─── Keyboard accessibility (Slice 3.7 — nested <button> fix) ──────────────
+//
+// After Slice 3.7, the outer artifact card is <div role="button" tabIndex={0}>
+// instead of <button>. This fixes the HTML violation where <button> contained
+// nested <button> elements (visibility toggle, z-order controls).
+//
+// The card must remain keyboard-accessible: Enter and Space activate it.
+
+describe('LayersPanel — keyboard accessibility', () => {
+  it('artifact card has role="button"', () => {
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+      />,
+    )
+    const card = screen.getByRole('button', { name: /Parcels/ })
+    expect(card.getAttribute('role')).toBe('button')
+  })
+
+  it('artifact card has tabIndex={0}', () => {
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+      />,
+    )
+    const card = screen.getByRole('button', { name: /Parcels/ })
+    expect(card.getAttribute('tabindex')).toBe('0')
+  })
+
+  it('artifact card is a <div>, not <button> (nested button fix)', () => {
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+      />,
+    )
+    const card = screen.getByRole('button', { name: /Parcels/ })
+    expect(card.tagName).toBe('DIV')
+  })
+
+  it('Enter key on artifact card selects it and opens right panel', () => {
+    const setSelected = vi.fn()
+    const setRightPanel = vi.fn()
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+        setSelectedArtifactId={setSelected}
+        setRightPanelOpen={setRightPanel}
+      />,
+    )
+    const card = screen.getByRole('button', { name: /Parcels/ })
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(setSelected).toHaveBeenCalledWith('spatial-1')
+    expect(setRightPanel).toHaveBeenCalledWith(true)
+  })
+
+  it('Space key on artifact card selects it and opens right panel', () => {
+    const setSelected = vi.fn()
+    const setRightPanel = vi.fn()
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+        setSelectedArtifactId={setSelected}
+        setRightPanelOpen={setRightPanel}
+      />,
+    )
+    const card = screen.getByRole('button', { name: /Parcels/ })
+    fireEvent.keyDown(card, { key: ' ' })
+    expect(setSelected).toHaveBeenCalledWith('spatial-1')
+    expect(setRightPanel).toHaveBeenCalledWith(true)
+  })
+
+  it('other keys on artifact card do not trigger selection', () => {
+    const setSelected = vi.fn()
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+        setSelectedArtifactId={setSelected}
+      />,
+    )
+    const card = screen.getByRole('button', { name: /Parcels/ })
+    fireEvent.keyDown(card, { key: 'Tab' })
+    fireEvent.keyDown(card, { key: 'Escape' })
+    fireEvent.keyDown(card, { key: 'a' })
+    expect(setSelected).not.toHaveBeenCalled()
+  })
+
+  it('no nested <button> warning: inner controls are inside <div>, not <button>', () => {
+    // This test verifies the structural fix: the outer card is <div role="button">
+    // and inner controls (visibility toggle, z-order buttons) are real <button>
+    // elements inside a <div>, not <button> inside <button>.
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+      />,
+    )
+    const card = screen.getByRole('button', { name: /Parcels/ })
+    // The outer card should be a div
+    expect(card.tagName).toBe('DIV')
+    // The inner buttons (visibility, z-order) should be actual <button> elements
+    const innerButtons = card.querySelectorAll('button')
+    expect(innerButtons.length).toBeGreaterThan(0)
+    // The visibility toggle should still work
+    expect(screen.getByTitle('Hide layer')).toBeTruthy()
+  })
+})

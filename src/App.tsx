@@ -832,7 +832,8 @@ function App() {
         
         // Layer settings: visibility gate + opacity
         const settings = layerSettings[artifact.id] ?? { visible: true, opacity: 1.0, zIndex: 0 }
-        // TODO: Slice 4 — use map.moveLayer() for runtime z-order (currently layers render in add-order only)
+        // Z-order: layers are added in sorted order on first render; subsequent
+        // changes use map.moveLayer() in the reconciliation pass below.
         const baseOpacity = settings.opacity
         const fillOpacity = isSelected ? Math.min(baseOpacity + 0.2, 1.0) : baseOpacity
         const lineWidth = isSelected ? 3 : 2
@@ -1091,6 +1092,51 @@ function App() {
         existingSourceIds.delete(sourceId)
         existingSourceIds.delete(selectedSourceId)
         void index
+      }
+
+      // Z-order reconciliation pass
+      // MapLibre renders layers in add-order; on subsequent renders we need
+      // map.moveLayer() to keep render order in sync with zIndex changes.
+      const sortedVisibleArtifacts = spatialArtifacts
+        .filter((a) => layerSettings[a.id]?.visible !== false)
+        .sort((a, b) => {
+          const za = layerSettings[a.id]?.zIndex ?? 0
+          const zb = layerSettings[b.id]?.zIndex ?? 0
+          return za - zb
+        })
+
+      for (let i = 0; i < sortedVisibleArtifacts.length; i++) {
+        const artifact = sortedVisibleArtifacts[i]
+        const nextArtifact = sortedVisibleArtifacts[i + 1]
+
+        // Compute layer IDs (matching existing pattern)
+        const fillId = `artifact-fill-${artifact.id}`
+        const lineId = `artifact-line-${artifact.id}`
+        const pointId = `artifact-point-${artifact.id}`
+
+        // The "before" layer is the fill layer of the next-higher-zIndex artifact.
+        // For the topmost artifact, no beforeId → moves to top.
+        let beforeFillId: string | undefined
+        if (nextArtifact) {
+          beforeFillId = `artifact-fill-${nextArtifact.id}`
+        }
+
+        // Move each layer type if it exists.
+        if (map.getLayer(fillId) && beforeFillId && map.getLayer(beforeFillId)) {
+          map.moveLayer(fillId, beforeFillId)
+        } else if (map.getLayer(fillId)) {
+          map.moveLayer(fillId) // move to top
+        }
+        if (map.getLayer(lineId) && beforeFillId && map.getLayer(beforeFillId)) {
+          map.moveLayer(lineId, beforeFillId)
+        } else if (map.getLayer(lineId)) {
+          map.moveLayer(lineId)
+        }
+        if (map.getLayer(pointId) && beforeFillId && map.getLayer(beforeFillId)) {
+          map.moveLayer(pointId, beforeFillId)
+        } else if (map.getLayer(pointId)) {
+          map.moveLayer(pointId)
+        }
       }
 
       for (const sourceId of existingSourceIds) {

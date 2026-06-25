@@ -349,6 +349,24 @@ button { cursor: pointer; }
   font-weight: var(--weight-semibold);
 }
 
+.card-button {
+  cursor: pointer;
+  border: none;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: none;
+}
+
+.card-button:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.card-button:focus-visible {
+  outline: 2px solid var(--accent-primary, #14b8a6);
+  outline-offset: 2px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

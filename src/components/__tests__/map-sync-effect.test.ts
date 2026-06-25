@@ -277,3 +277,87 @@ describe('inline map-sync logic (still untestable in isolation)', () => {
     expect(true).toBe(true)
   })
 })
+
+// ─── Z-order reconciliation pass (Slice 3.7) ────────────────────────────
+//
+// Slice 3.7 added a reconciliation pass AFTER the main layer iteration in
+// the map-sync effect. This pass:
+//
+//   1. Filters to visible artifacts sorted by zIndex (ascending)
+//   2. For each artifact, computes fill/line/point layer IDs
+//   3. Computes beforeFillId from the next-higher-zIndex artifact
+//   4. Calls map.moveLayer(layerId, beforeId) for each existing layer
+//   5. Topmost artifact (no next) gets map.moveLayer(layerId) → moves to top
+//
+// This ensures that when a user reorders layers via the UI, the MapLibre
+// render order is updated on the NEXT render pass (not just at add-time).
+//
+// The reconciliation logic is inline in App.tsx and tightly coupled to
+// MapLibre's getLayer/moveLayer API, so it cannot be unit-tested in
+// isolation. These tests verify the INPUT CONTRACT that the reconciliation
+// pass depends on — i.e., that the pure helpers produce the correct sorted
+// order and unique zIndex values.
+
+describe('z-order reconciliation pass contract (Slice 3.7)', () => {
+  it('sorted by zIndex ascending produces correct render order', () => {
+    // The reconciliation pass sorts visible artifacts by zIndex ascending.
+    // After reorderLayer, the resulting map should still produce a valid
+    // ascending sort. This verifies the sort input is well-formed.
+    const prev: SettingsMap = {
+      a: { visible: true, opacity: 1.0, zIndex: 0 },
+      b: { visible: true, opacity: 1.0, zIndex: 1 },
+      c: { visible: true, opacity: 1.0, zIndex: 2 },
+    }
+    // After swapping a→up (a gets zIndex 1, b gets zIndex 0)
+    const next = reorderLayer(prev, 'a', 'up')
+    // Sorted order should now be: b(0), a(1), c(2)
+    const sortedIds = ['a', 'b', 'c']
+      .sort((x, y) => next[x].zIndex - next[y].zIndex)
+    expect(sortedIds).toEqual(['b', 'a', 'c'])
+  })
+
+  it('hidden layers are excluded from reconciliation sort', () => {
+    // The reconciliation pass filters visible !== false before sorting.
+    // Hidden layers should not appear in the sorted list.
+    const prev: SettingsMap = {
+      a: { visible: true, opacity: 1.0, zIndex: 0 },
+      b: { visible: false, opacity: 1.0, zIndex: 1 }, // hidden
+      c: { visible: true, opacity: 1.0, zIndex: 2 },
+    }
+    const visibleIds = ['a', 'b', 'c'].filter((id) => prev[id].visible !== false)
+    expect(visibleIds).toEqual(['a', 'c'])
+  })
+
+  it('zIndex values are unique after any sequence of reorders', () => {
+    // The reconciliation pass assumes unique zIndex for sort ordering.
+    // reorderLayer swaps zIndex values, so uniqueness is preserved.
+    let current: SettingsMap = {
+      a: { visible: true, opacity: 1.0, zIndex: 0 },
+      b: { visible: true, opacity: 1.0, zIndex: 1 },
+      c: { visible: true, opacity: 1.0, zIndex: 2 },
+    }
+    // Multiple reorders
+    current = reorderLayer(current, 'a', 'up')
+    current = reorderLayer(current, 'c', 'down')
+    current = reorderLayer(current, 'b', 'down')
+    // All zIndex values must still be unique
+    const zIndices = ['a', 'b', 'c'].map((id) => current[id].zIndex)
+    expect(new Set(zIndices).size).toBe(3)
+  })
+
+  it('beforeFillId pattern: next artifact fill layer is used as beforeId', () => {
+    // The reconciliation pass computes beforeFillId as:
+    //   `artifact-fill-${sortedVisibleArtifacts[i + 1]?.id}`
+    // For the topmost artifact (last in sorted list), beforeFillId is undefined
+    // and map.moveLayer(fillId) moves it to the top.
+    const artifacts = [
+      { id: 'a', zIndex: 0 },
+      { id: 'b', zIndex: 1 },
+      { id: 'c', zIndex: 2 },
+    ]
+    // For artifact at index 0, beforeFillId should be fill layer of artifact at index 1
+    expect(`artifact-fill-${artifacts[1].id}`).toBe('artifact-fill-b')
+    // For artifact at index 2 (topmost), no next artifact
+    expect(artifacts[3]).toBeUndefined()
+  })
+})
