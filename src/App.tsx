@@ -9,6 +9,12 @@ import { rowsToFeatureCollection } from './lib/wkb'
 import { saveProject, loadProject, hasSavedProject, clearSavedProject, createSavedQuery, reRegisterAllArtifactTables } from './lib/persistence'
 import { exportToGeoJson, exportToJson, triggerDownload, getArtifactExportOptions } from './lib/export'
 import { buildMaterializedQueryArtifact, buildQueryPreview, getQueryProvenanceStrengthPresentation } from './lib/query-semantics'
+import {
+  reconcileLayerSettings,
+  toggleLayerVisibility as toggleLayerVisibilityPure,
+  changeLayerOpacity as changeLayerOpacityPure,
+  reorderLayer as reorderLayerPure,
+} from './lib/layer-controls'
 import { getActiveWarnings, getCurrentNotes, getDeletedQueryStatusMessage, getExportFailureStatusMessage, getExportSuccessStatusMessage, getHistoryDetailGroups, getLoadedQueryStatusMessage, getProvenanceNotes, getQueryRenderIssue, getQueryRunStatusMessage, getSeverityLabel, getSuggestedQueryArtifactName, getWarningRecoveryHint, getWarningScope, getWarningScopeLabel, isWarning, buildQueryHistoryEvent } from './lib/product-surface'
 import { getSpatialEngine, executeRegisteredSingleInputOperation, executeRegisteredAggregationOperation, executeClipOperation, executeIntersectOperation, executeRegisteredMeasurementOperation, executeAttributeJoinOperation, getJoinableFieldNames, getDisplayBounds, getDisplayFeatureCollection, getSingleInputOperationPresentation, getAggregationOperationPresentation, getMeasurementOperationPresentation, getSingleInputGeometrySupport, getSingleInputOperationInfoWarning, getMeasurementUnitDisclosure, getMeasurementUnitRefusalWarning, getAttributeJoinPresentation, getAttributeJoinOutputFieldSelection, getOperationSuccessStatusMessage, getTopologyRoleContext, isProjectedCrs, needsDisplayTransformation, validateForClip, validateForIntersect, validateForReproject } from './lib/spatial'
 import { OperationContractDisplay, OperationExecutionShell, OperationOutputSemantics, OperationSecondarySelector, OperationSourceSummary, OperationFieldCheckboxList, TypedWarningPanel, artifactSummaryText, getArtifactOutputKind, getArtifactOutputKindLabel, getOperationWarningTone } from './components/operation-ui'
@@ -671,62 +677,25 @@ function App() {
   // Initialize layer settings for new artifacts (ephemeral, not persisted)
   useEffect(() => {
     setLayerSettings((prev) => {
-      const next = { ...prev }
-      let changed = false
-      // Assign default settings to new spatial artifacts
-      artifacts.forEach((artifact) => {
-        if (!artifact.spatial) return
-        if (!next[artifact.id]) {
-          changed = true
-          // zIndex starts above existing max to place new artifacts on top
-          const existingMaxZ = Math.max(-1, ...Object.values(prev).map((s) => s.zIndex))
-          next[artifact.id] = { visible: true, opacity: 1.0, zIndex: existingMaxZ + 1 }
-        }
-      })
-      // Clean up settings for removed artifacts
-      for (const id of Object.keys(prev)) {
-        if (!artifacts.some((a) => a.id === id)) {
-          changed = true
-          delete next[id]
-        }
-      }
+      const { next, changed } = reconcileLayerSettings(
+        prev,
+        artifacts.map((a) => ({ id: a.id, spatial: a.spatial ?? false })),
+      )
       return changed ? next : prev
     })
   }, [artifacts])
 
   // Layer control helpers
   const toggleLayerVisibility = (artifactId: string) => {
-    setLayerSettings((prev) => ({
-      ...prev,
-      [artifactId]: { ...prev[artifactId], visible: !prev[artifactId]?.visible },
-    }))
+    setLayerSettings((prev) => toggleLayerVisibilityPure(prev, artifactId))
   }
 
   const changeLayerOpacity = (artifactId: string, opacity: number) => {
-    setLayerSettings((prev) => ({
-      ...prev,
-      [artifactId]: { ...prev[artifactId], opacity: Math.max(0, Math.min(1, opacity)) },
-    }))
+    setLayerSettings((prev) => changeLayerOpacityPure(prev, artifactId, opacity))
   }
 
   const reorderLayer = (artifactId: string, direction: 'up' | 'down') => {
-    setLayerSettings((prev) => {
-      const current = prev[artifactId]
-      if (!current) return prev
-      // Get all spatial artifact ids sorted by zIndex
-      const spatialIds = Object.keys(prev).sort((a, b) => prev[a].zIndex - prev[b].zIndex)
-      const idx = spatialIds.indexOf(artifactId)
-      if (idx === -1) return prev
-      if (direction === 'up' && idx >= spatialIds.length - 1) return prev // already on top
-      if (direction === 'down' && idx <= 0) return prev // already on bottom
-      const swapIdx = direction === 'up' ? idx + 1 : idx - 1
-      const swapId = spatialIds[swapIdx]
-      const newSettings = { ...prev }
-      // Swap the zIndex values
-      newSettings[artifactId] = { ...newSettings[artifactId], zIndex: prev[swapId].zIndex }
-      newSettings[swapId] = { ...newSettings[swapId], zIndex: prev[artifactId].zIndex }
-      return newSettings
-    })
+    setLayerSettings((prev) => reorderLayerPure(prev, artifactId, direction))
   }
 
   useEffect(() => {
