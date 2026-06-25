@@ -1,7 +1,7 @@
 import type { Artifact } from '../../types';
 import type { ResolutionCandidate } from './query-resolver';
 import type { OperationDefinition } from '../operations/types';
-import type { ChainDefinition, ChainStep } from '../operations/chain-registry';
+import type { ChainDefinition, ChainStep, ChainCondition } from '../operations/chain-registry';
 import { OPERATION_REGISTRY } from '../operations/registry';
 import { CHAIN_REGISTRY } from '../operations/chain-registry';
 import { getOperationDefinition } from '../operations/registry';
@@ -76,6 +76,9 @@ export function buildPlan(
     steps.push(...resolvedSteps.steps);
     canExecute = resolvedSteps.canExecute;
     description = chain.description;
+    if (resolvedSteps.skippedOps.length > 0) {
+      description += ` (skipped: ${resolvedSteps.skippedOps.join(', ')})`;
+    }
   }
 
   return {
@@ -184,17 +187,39 @@ function buildOperationStep(
   };
 }
 
+export function evaluateCondition(
+  condition: ChainCondition | undefined,
+  parameters: Record<string, unknown>,
+): boolean {
+  if (!condition) return true;
+  if (condition.kind === 'param-provided') {
+    const value = parameters[condition.paramName];
+    return value !== undefined && value !== null;
+  }
+  return true;
+}
+
 function buildChainSteps(
   chain: ChainDefinition,
   parameters: Record<string, any>,
   artifacts: Artifact[],
-): { steps: PlannedStep[], canExecute: boolean } {
+): { steps: PlannedStep[], canExecute: boolean, skippedOps: string[] } {
   const steps: PlannedStep[] = [];
   let canExecute = true;
   const stepOutputs: Record<string, string> = {}; // step index -> artifact id
+  const skippedIndices = new Set<number>();
+  const skippedOps: string[] = [];
 
   for (let i = 0; i < chain.steps.length; i++) {
     const step = chain.steps[i];
+
+    // Evaluate condition — skip step if condition not met
+    if (!evaluateCondition(step.condition, parameters)) {
+      skippedIndices.add(i);
+      skippedOps.push(step.op);
+      continue;
+    }
+
     const operation = getOperationDefinition(step.op);
     if (!operation) {
       steps.push({
@@ -213,11 +238,18 @@ function buildChainSteps(
     // Resolve input references
     const stepParams: Record<string, any> = {};
     const inputArtifacts: string[] = [];
+    let stepRefusal: string | undefined;
 
     for (const [paramName, ref] of Object.entries(step.inputs)) {
       if (ref.startsWith('$step')) {
         // Reference to previous step output
         const stepIndex = parseInt(ref.match(/\$step(\d+)\.output/)?.[1] || '0');
+        if (skippedIndices.has(stepIndex)) {
+          // Referenced step was skipped due to condition
+          stepRefusal = `Step ${i} (${step.op}) depends on skipped step ${stepIndex} (${skippedOps[skippedOps.length - 1] || 'optional step'})`;
+          canExecute = false;
+          break;
+        }
         const artifactId = stepOutputs[stepIndex];
         if (artifactId) {
           stepParams[paramName] = artifactId;
@@ -256,6 +288,20 @@ function buildChainSteps(
       }
     }
 
+    // If we already have a refusal from a skipped-step reference, push it
+    if (stepRefusal) {
+      steps.push({
+        operationId: step.op,
+        params: stepParams,
+        inputArtifacts,
+        outputName: `step_${i}`,
+        outputKind: 'spatial-artifact',
+        warnings: [],
+        refusal: stepRefusal,
+      });
+      continue;
+    }
+
     // Build step
     const stepResult = buildOperationStep(operation, stepParams, artifacts);
     steps.push(stepResult);
@@ -268,7 +314,7 @@ function buildChainSteps(
     stepOutputs[i] = `${sourceArtifact?.name || 'output'}_${operation.label.toLowerCase()}_${i}`;
   }
 
-  return { steps, canExecute };
+  return { steps, canExecute, skippedOps };
 }
 
 function findArtifactParameter(

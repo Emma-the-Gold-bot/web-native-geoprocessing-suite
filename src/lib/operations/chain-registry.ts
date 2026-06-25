@@ -6,6 +6,11 @@
 
 import type { OperationIntent } from './types';
 
+export type ChainCondition = {
+  kind: 'param-provided';
+  paramName: string;
+};
+
 export interface ChainStepInput {
   /** Reference: "$param_name" for user params, "$stepN.output" for step outputs */
   ref: string;
@@ -22,7 +27,7 @@ export interface ChainStep {
   output_name?: string;
 
   /** Optional condition for conditional execution */
-  condition?: string;
+  condition?: ChainCondition;
 }
 
 export interface ChainParameter {
@@ -192,7 +197,7 @@ export const CHAIN_REGISTRY: Record<string, ChainDefinition> = {
           join_key: '$enrichment_key',
         },
         // Only runs if enrichment params are provided
-        condition: 'enrichment provided',
+        condition: { kind: 'param-provided', paramName: 'enrichment' },
         output_name: '$enriched_conflicts',
       },
     ],
@@ -235,7 +240,7 @@ export const CHAIN_REGISTRY: Record<string, ChainDefinition> = {
       {
         op: 'simplify-v1',
         inputs: { source: '$step0.output', tolerance: '$tolerance' },
-        condition: 'tolerance provided',
+        condition: { kind: 'param-provided', paramName: 'tolerance' },
         output_name: '$source_simplified',
       },
     ],
