@@ -30,10 +30,14 @@ function extractPlaceFromQuery(query: string): string | null {
 interface DiscoveryPanelProps {
   onImport?: (result: ApiDiscoveryResult) => void;
   onBboxPreview?: (bbox: BBox | null) => void;
+  /** Source to pin the panel to (e.g., 'osm', 'ckan', 'stac'). null = all sources. */
+  source?: string | null;
+  /** Initial query to seed the input with. Only used on mount. */
+  initialQuery?: string;
 }
 
-export function DiscoveryPanel({ onImport, onBboxPreview }: DiscoveryPanelProps) {
-  const [query, setQuery] = useState('');
+export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }: DiscoveryPanelProps) {
+  const [query, setQuery] = useState(initialQuery ?? '');
   const [result, setResult] = useState<ApiDiscoveryResult | null>(null);
   const [state, setState] = useState<PanelState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +46,13 @@ export function DiscoveryPanel({ onImport, onBboxPreview }: DiscoveryPanelProps)
   const [displayName, setDisplayName] = useState<string | null>(null);
   const queryRef = useRef(query);
   queryRef.current = query;
+
+  // Cleanup bbox preview when panel unmounts
+  useEffect(() => {
+    return () => {
+      onBboxPreview?.(null);
+    };
+  }, [onBboxPreview]);
 
   // Notify parent when bbox changes (for map visualization)
   useEffect(() => {
@@ -86,6 +97,7 @@ export function DiscoveryPanel({ onImport, onBboxPreview }: DiscoveryPanelProps)
       const res = await discover({
         query: queryRef.current,
         bbox: activeBbox ?? undefined,
+        source: source ?? undefined,
       });
       setResult(res);
       setState('results');
@@ -93,7 +105,7 @@ export function DiscoveryPanel({ onImport, onBboxPreview }: DiscoveryPanelProps)
       setError(err instanceof Error ? err.message : 'Discovery failed');
       setState('idle');
     }
-  }, []);
+  }, [source]);
 
   const handleConfirmBbox = useCallback(() => {
     runDiscovery(bbox);
@@ -139,6 +151,13 @@ export function DiscoveryPanel({ onImport, onBboxPreview }: DiscoveryPanelProps)
 
   return (
     <div style={{ padding: 12 }}>
+      {/* Source badge — shows pinned source from prefix routing */}
+      {source && (
+        <div style={{ marginBottom: 8 }}>
+          <span className="badge" style={{ textTransform: 'uppercase' }}>{source}</span>
+        </div>
+      )}
+
       {/* Search form */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -266,8 +285,8 @@ export function DiscoveryPanel({ onImport, onBboxPreview }: DiscoveryPanelProps)
             </div>
           )}
 
-          {/* Import button for vector/raster results */}
-          {(result.kind === 'vector' || result.kind === 'raster') && (
+          {/* Import button for vector results only — raster links to external asset */}
+          {result.kind === 'vector' && (
             <button
               className="primary"
               style={{ marginTop: 12 }}

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen } from 'lucide-react'
 import type { DisplayTransformStatus } from './lib/spatial/display-transform'
 import maplibregl from 'maplibre-gl'
-import type { Artifact, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence, LayerSettings } from './types'
+import type { Artifact, BBox, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence, LayerSettings } from './types'
 import { sampleGeoJson } from './lib/sampleData'
 import { getDuckDb } from './lib/duckdb'
 import { formatTimestamp, inferGeometryType, getGeometryTypeSummary, getArtifactGeometryLabel, isFeatureCollection, makeId, formatCount } from './lib/utils'
@@ -21,6 +21,7 @@ import { getSpatialEngine, executeRegisteredSingleInputOperation, executeRegiste
 import { OperationContractDisplay, OperationExecutionShell, OperationOutputSemantics, OperationSecondarySelector, OperationSourceSummary, OperationFieldCheckboxList, TypedWarningPanel, artifactSummaryText, getArtifactOutputKind, getArtifactOutputKindLabel, getOperationWarningTone } from './components/operation-ui'
 import { NLQueryPanel } from './components/NLQueryPanel'
 import { DiscoveryPanel } from './components/DiscoveryPanel'
+import type { DiscoveryResult as ApiDiscoveryResult } from './lib/discovery'
 import LayersPanel from './components/LayersPanel'
 
 type BottomTab = 'table' | 'sql' | 'results'
@@ -479,6 +480,13 @@ function App() {
   const [commandFocused, setCommandFocused] = useState(false)
   const importFileRef = useRef<HTMLInputElement>(null)
 
+  // Slice 6c: Discovery prefix routing state
+  const [discoverySource, setDiscoverySource] = useState<string | null>(null)
+  const [discoverySeedQuery, setDiscoverySeedQuery] = useState('')
+
+  // Slice 6b: Bbox preview overlay state
+  const [bboxPreview, setBboxPreview] = useState<BBox | null>(null)
+
   function toggleSidebar(mode: SidebarMode) {
     setActiveSidebar(prev => (prev === mode ? null : mode))
   }
@@ -489,16 +497,33 @@ function App() {
       setActiveSidebar('query')
       const sqlText = value.slice(1).trimStart()
       if (sqlText) setSql(sqlText)
+      // Clear discovery state when leaving @ prefix
+      setDiscoverySource(null)
+      setDiscoverySeedQuery('')
     } else if (value.startsWith('@')) {
       setActiveSidebar('discover')
-      const target = value.split(' ')[0].slice(1)
-      if (target === 'osm' || target === 'ckan' || target === 'stac') {
-        addToast(`Discovery prefix @${target} will route to DiscoveryPanel (placeholder)`, 'info')
+      const firstToken = value.split(' ')[0].slice(1)
+      const knownSources = ['osm', 'ckan', 'stac', 'arcgis']
+      if (knownSources.includes(firstToken)) {
+        // Route to DiscoveryPanel with source + seed query
+        setDiscoverySource(firstToken)
+        const seedText = value.slice(firstToken.length + 1).trimStart()
+        setDiscoverySeedQuery(seedText)
+      } else {
+        // Just @ prefix without a known source — still open panel but no source pin
+        setDiscoverySource(null)
+        const seedText = value.slice(1).trimStart()
+        setDiscoverySeedQuery(seedText)
       }
     } else if (value.trim()) {
       setActiveSidebar('chain')
+      // Clear discovery state when leaving @ prefix
+      setDiscoverySource(null)
+      setDiscoverySeedQuery('')
     } else {
       setActiveSidebar(null)
+      setDiscoverySource(null)
+      setDiscoverySeedQuery('')
     }
   }
 
@@ -1142,6 +1167,8 @@ function App() {
 
       for (const sourceId of existingSourceIds) {
         if (!sourceId.startsWith('artifact-')) continue
+        // Defensive: never clean up internal overlay sources (bbox preview, etc.)
+        if (sourceId.startsWith('__')) continue
         const fillId = sourceId.replace('-source-', '-fill-')
         const lineId = sourceId.replace('-source-', '-line-')
         const pointId = sourceId.replace('-source-', '-point-')
@@ -1193,6 +1220,78 @@ function App() {
       cancelled = true
     }
   }, [artifacts, selectedArtifactId, layerSettings])
+
+  // Slice 6b: Bbox preview overlay — renders semi-transparent rectangle on map
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const sourceId = '__bbox-preview'
+    const fillId = '__bbox-preview-fill'
+    const lineId = '__bbox-preview-line'
+
+    const cleanup = () => {
+      if (map.getLayer(lineId)) map.removeLayer(lineId)
+      if (map.getLayer(fillId)) map.removeLayer(fillId)
+      if (map.getSource(sourceId)) map.removeSource(sourceId)
+    }
+
+    if (!bboxPreview) {
+      cleanup()
+      return
+    }
+
+    const bboxPolygon: GeoJSON.Feature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [bboxPreview.west, bboxPreview.south],
+          [bboxPreview.east, bboxPreview.south],
+          [bboxPreview.east, bboxPreview.north],
+          [bboxPreview.west, bboxPreview.north],
+          [bboxPreview.west, bboxPreview.south],
+        ]],
+      },
+    }
+
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, {
+        type: 'geojson',
+        data: bboxPolygon,
+      })
+    } else {
+      ;(map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(bboxPolygon)
+    }
+
+    if (!map.getLayer(fillId)) {
+      map.addLayer({
+        id: fillId,
+        type: 'fill',
+        source: sourceId,
+        paint: {
+          'fill-color': '#22d3ee',
+          'fill-opacity': 0.12,
+        },
+      })
+    }
+
+    if (!map.getLayer(lineId)) {
+      map.addLayer({
+        id: lineId,
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': '#22d3ee',
+          'line-width': 2,
+          'line-dasharray': [2, 2],
+        },
+      })
+    }
+
+    return cleanup
+  }, [bboxPreview])
 
   // Auto-fit map to selected artifact bounds
   // Uses display geometry normalization to handle projected CRS artifacts
@@ -1608,57 +1707,111 @@ function App() {
     setImportStage('review')
   }
 
-  const confirmImport = () => {
-    if (!importReview || !importReview.data || importReview.supportLevel === 'unsupported') return
+  const confirmImport = (discoveryOverride?: {
+    featureCollection: GeoJSON.FeatureCollection
+    name: string
+    format: string
+    crs: string
+    source?: string
+    trace?: string[]
+    onClose?: () => void
+  }) => {
+    // File import path: requires importReview state
+    if (!discoveryOverride && (!importReview || !importReview.data || importReview.supportLevel === 'unsupported')) return
+    // Discovery path: validate FeatureCollection
+    if (discoveryOverride && !isFeatureCollection(discoveryOverride.featureCollection)) return
+
     setImporting(true)
     setImportStage('importing')
 
     const eventId = makeId('event')
     const artifactId = makeId('artifact')
-    const artifactName = importReview.fileName.replace(/\.[^.]+$/, '')
+
+    // Resolve values from either importReview or discovery override
+    const artifactName = discoveryOverride
+      ? discoveryOverride.name
+      : importReview!.fileName.replace(/\.[^.]+$/, '')
+    const importFormat = discoveryOverride ? discoveryOverride.format : importReview!.format
+    const importData = discoveryOverride ? discoveryOverride.featureCollection : importReview!.data
+    const importCrs = discoveryOverride ? discoveryOverride.crs : importReview!.crs
+    const importSpatial = true // Discovery vector results are always spatial
+    const importGeometryType = discoveryOverride
+      ? inferGeometryType(discoveryOverride.featureCollection)
+      : importReview!.geometryType
+    const importRowCount = discoveryOverride
+      ? discoveryOverride.featureCollection.features.length
+      : importReview!.rowCount
+
     const tableName = artifactName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'dataset'
-    const crsProvenance = buildImportCrsProvenance(importReview.crs === 'unknown' ? undefined : importReview.crs)
+    const crsProvenance = buildImportCrsProvenance(importCrs === 'unknown' ? undefined : importCrs)
+
+    // Build warnings — discovery imports get a provenance warning from trace
+    const importWarnings: WarningRef[] = discoveryOverride
+      ? [
+          ...(discoveryOverride.trace?.length
+            ? [{
+                id: makeId('warning'),
+                code: 'DISCOVERY_PROVENANCE',
+                severity: 'info' as const,
+                scope: 'historical' as const,
+                title: 'Discovery provenance',
+                message: discoveryOverride.trace.join('; '),
+              }]
+            : []),
+        ]
+      : importReview!.warnings
+
     const artifact: Artifact = {
       id: artifactId,
       name: artifactName,
       kind: 'source',
-      outputKind: importReview.spatial ? 'spatial-artifact' : 'tabular-artifact',
-      format: importReview.format,
-      spatial: importReview.spatial,
-      geometryType: importReview.geometryType,
-      rowCount: importReview.rowCount,
-      crs: importReview.crs,
+      outputKind: discoveryOverride ? 'spatial-artifact' : (importReview!.spatial ? 'spatial-artifact' : 'tabular-artifact'),
+      format: importFormat,
+      spatial: discoveryOverride ? true : importReview!.spatial,
+      geometryType: importGeometryType,
+      rowCount: importRowCount,
+      crs: importCrs,
       crsProvenance,
-      warnings: importReview.warnings,
+      warnings: importWarnings,
       originEventId: eventId,
       tableName,
-      data: importReview.data, // Will be updated with full geometry for GeoParquet
-      tableRows: importReview.previewRows,
+      data: importData,
+      tableRows: discoveryOverride ? undefined : importReview!.previewRows,
     }
 
-    const historyEventWarnings = importReview.warnings.map((warning) => ({ ...warning, scope: 'historical' as const }))
+    const historyEventWarnings = importWarnings.map((warning) => ({ ...warning, scope: 'historical' as const }))
 
     const historyEvent: HistoryEvent = {
       id: eventId,
       type: 'import',
       timestamp: new Date().toISOString(),
-      summary: `Imported ${artifact.name} from ${importReview.format}`,
+      summary: discoveryOverride
+        ? `Imported ${artifact.name} from ${discoveryOverride.source ?? 'discovery'}`
+        : `Imported ${artifact.name} from ${importFormat}`,
       inputArtifactIds: [],
       outputArtifactIds: [artifactId],
       warnings: historyEventWarnings,
-      details: {
-        format: importReview.format,
-        rowCount: importReview.rowCount,
-        geometryType: importReview.geometryType,
-        crs: importReview.crs,
-      },
+      details: discoveryOverride
+        ? {
+            format: importFormat,
+            rowCount: importRowCount,
+            geometryType: importGeometryType,
+            crs: importCrs,
+            source: discoveryOverride.source,
+          }
+        : {
+            format: importFormat,
+            rowCount: importRowCount,
+            geometryType: importGeometryType,
+            crs: importCrs,
+          },
     }
 
     void (async () => {
-      let artifactData = importReview.data
-      let artifactGeometryType = importReview.geometryType
-      let artifactSpatial = importReview.spatial
-      let artifactRenderIssue = artifact.format === 'GeoParquet' && !importReview.spatial
+      let artifactData = importData
+      let artifactGeometryType = importGeometryType
+      let artifactSpatial = discoveryOverride ? true : importReview!.spatial
+      let artifactRenderIssue = !discoveryOverride && importReview!.format === 'GeoParquet' && !importReview!.spatial
         ? 'This GeoParquet artifact is registered and queryable, but map rendering is not available for the detected geometry column.'
         : undefined
 
@@ -1666,14 +1819,14 @@ function App() {
         const db = await getDuckDb()
         const conn = await db.connect()
         try {
-          if (importReview.format === 'GeoParquet' && importReview.data instanceof Uint8Array) {
+          if (!discoveryOverride && importReview!.format === 'GeoParquet' && importReview!.data instanceof Uint8Array) {
             const parquetName = `${tableName}.parquet`
-            await db.registerFileBuffer(parquetName, importReview.data)
+            await db.registerFileBuffer(parquetName, importReview!.data)
             await conn.query(`DROP TABLE IF EXISTS ${tableName}`)
             await conn.query(`CREATE TABLE ${tableName} AS SELECT * FROM read_parquet('${parquetName}')`)
             
             // For GeoParquet, fetch full geometry from the registered table for map rendering
-            const geometryColumn = importReview.tableName
+            const geometryColumn = importReview!.tableName
             if (geometryColumn) {
               const fullGeometry = await fetchFullGeometryFromTable(tableName, geometryColumn)
               if (fullGeometry && fullGeometry.featureCollection) {
@@ -1684,7 +1837,7 @@ function App() {
               }
             }
           } else if (isFeatureCollection(artifact.data)) {
-            const rows = artifact.data.features.map((feature) => ({
+            const rows = (artifact.data as GeoJSON.FeatureCollection).features.map((feature) => ({
               ...(feature.properties ?? {}),
               geometry: JSON.stringify(feature.geometry),
             }))
@@ -1707,7 +1860,7 @@ function App() {
 
         // If the GeoParquet path successfully produced renderable map features,
         // clear the early import warning that claimed map rendering was not available.
-        if (updatedArtifact.format === 'GeoParquet' && updatedArtifact.spatial && isFeatureCollection(updatedArtifact.data)) {
+        if (!discoveryOverride && updatedArtifact.format === 'GeoParquet' && updatedArtifact.spatial && isFeatureCollection(updatedArtifact.data)) {
           updatedArtifact.warnings = updatedArtifact.warnings.filter(
             (warning) => warning.title !== 'GeoParquet import'
           )
@@ -1717,20 +1870,68 @@ function App() {
         setHistory((current) => [historyEvent, ...current])
         setSelectedArtifactId(artifactId)
         setBottomTab('table')
-        setImportReview(null)
-        setImportStage('idle')
+
+        if (discoveryOverride) {
+          // Discovery path: close panel and clean up
+          discoveryOverride.onClose?.()
+        } else {
+          // File import path: reset import review state
+          setImportReview(null)
+          setImportStage('idle')
+        }
+
         setStatusMessage(`Imported ${artifact.name}`)
         addToast(`Imported ${artifact.name}`, 'success')
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown import/runtime error'
         setStatusMessage(`Import failed: ${message}. Review the import sheet and either fix the file or cancel the transaction.`)
         addToast(`Import failed: ${message}. Review the import sheet and either fix the file or cancel the transaction.`, 'error')
-        setImportStage('review')
+        if (discoveryOverride) {
+          discoveryOverride.onClose?.()
+        } else {
+          setImportStage('review')
+        }
       } finally {
         setImporting(false)
       }
     })()
   }
+
+  // Slice 6a: Discovery import handler — routes into confirmImport with override
+  const handleDiscoveryImport = useCallback((result: ApiDiscoveryResult) => {
+    if (result.kind !== 'vector' || !result.data) {
+      addToast('Only vector discovery results can be imported to the workspace.', 'info')
+      return
+    }
+    const fc = result.data as GeoJSON.FeatureCollection
+    if (!isFeatureCollection(fc)) {
+      addToast('Discovery result is not a valid FeatureCollection.', 'warning')
+      return
+    }
+    // Derive a human-readable name from source + query/bbox
+    const sourceLabel = result.provenance.source ?? 'discovery'
+    const featureCount = fc.features.length
+    const artifactName = `${sourceLabel}-${featureCount}-features`
+
+    confirmImport({
+      featureCollection: fc,
+      name: artifactName,
+      format: result.format ?? 'GeoJSON',
+      crs: 'EPSG:4326',
+      source: sourceLabel,
+      trace: result.trace,
+      onClose: () => {
+        // Close discovery panel after successful import
+        setActiveSidebar(null)
+        setBboxPreview(null)
+      },
+    })
+  }, [])
+
+  // Slice 6b: Bbox preview handler
+  const handleBboxPreview = useCallback((bbox: BBox | null) => {
+    setBboxPreview(bbox)
+  }, [])
 
   const runQuery = async () => {
     const queryableArtifacts = artifacts.filter((artifact) => artifact.tableName)
@@ -2972,8 +3173,10 @@ function App() {
 
           {activeSidebar === 'discover' && (
             <DiscoveryPanel
-              onImport={() => addToast('Discovery import wired — implementation in Slice 3.', 'info')}
-              onBboxPreview={() => {}}
+              onImport={handleDiscoveryImport}
+              onBboxPreview={handleBboxPreview}
+              source={discoverySource}
+              initialQuery={discoverySeedQuery}
             />
           )}
 
@@ -3227,7 +3430,7 @@ function App() {
               </div>
             )}
             <div className="actions">
-              <button className="primary" disabled={importing || importReview.supportLevel === 'unsupported'} onClick={confirmImport}>
+              <button className="primary" disabled={importing || importReview.supportLevel === 'unsupported'} onClick={() => confirmImport()}>
                 {importing ? 'Importing…' : 'Import into workspace'}
               </button>
               <button className="secondary" onClick={() => { setImportReview(null); setImportStage('idle') }}>Cancel</button>

@@ -112,6 +112,33 @@ async function main() {
       await shot(page, '06-nl-query-buffer-parcels')
     }
 
+    // ─── Slice 6 acceptance: @osm prefix routes to Discover panel ───
+    if (cmdCount > 0) {
+      const cmd = cmdInput.first()
+      await cmd.click()
+      await cmd.fill('@osm buildings in San Francisco')
+      await page.waitForTimeout(500)
+      await shot(page, '07-discover-prefix-osm')
+
+      // Verify Discover panel is open with source badge + seeded query
+      const discoverPanel = await page.locator('.sidebar-drawer').count()
+      record('Discover panel opens on @osm prefix', discoverPanel > 0, `found ${discoverPanel} drawer(s)`)
+
+      // Check that the source badge "osm" appears in the panel
+      const sourceBadge = await page.locator('.sidebar-drawer .badge:has-text("osm")').count()
+      record('Source badge "osm" visible in panel', sourceBadge > 0, `found ${sourceBadge} badge(s)`)
+
+      // Check input was seeded with the query text
+      const panelInput = page.locator('.sidebar-drawer input[placeholder*="What data"]')
+      const panelInputCount = await panelInput.count()
+      if (panelInputCount > 0) {
+        const inputValue = await panelInput.first().inputValue()
+        record('Input seeded with query text', inputValue.includes('buildings in San Francisco'), `value: "${inputValue}"`)
+      } else {
+        record('Input seeded with query text', false, 'panel input not found')
+      }
+    }
+
     // ─── Capture console errors ───
     writeFileSync(join(OUT_DIR, 'console-errors.txt'), consoleErrors.join('\n'))
     record('No console errors', consoleErrors.length === 0, `${consoleErrors.length} errors captured`)
