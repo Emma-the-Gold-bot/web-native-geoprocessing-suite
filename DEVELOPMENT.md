@@ -176,6 +176,25 @@ Ship the wireframe-first shape without rewriting the engine, schema, or any oper
 - **NLQueryPanel import:** currently NOT imported in App.tsx (orphaned per `ACTIVE_TODO.md`). Slice 1 fixes this.
 - **Debug params:** `debugParams.logMapSync` etc. must still work.
 
+### Slice 1 verification — smoke test (2026-06-24)
+
+`scripts/smoke-test.mjs` runs against `vite preview` of the built app, verifies all 7 acceptance criteria in browser, and captures screenshots to `smoke-screenshots/`.
+
+First-run results: **6/6 passed, 0 console errors.** Confirmed:
+- ✅ 5 sidebar icons present (Layers / Discover / Import / Query / History)
+- ✅ Command bar present at bottom with placeholder for `/` SQL and `@osm/@ckan/@stac` prefixes
+- ✅ 14 top-bar operation buttons hidden (0 found in chrome)
+- ✅ Map element rendered (MapLibre + OpenStreetMap basemap)
+- ✅ Layers icon opens drawer with empty-state ("No project artifacts yet")
+- ✅ NL pipeline: "Buffer parcels by 500 feet" → plan visualization renders (op=Buffer, distance_unit=feet, confidence=Low, "Missing source artifact")
+- ✅ 0 console errors
+
+What it does NOT verify (requires fixtures + follow-up slice):
+- End-to-end spatial operations with real data
+- Layer controls (visibility/opacity/z-order) on actual artifacts
+- Hidden operation dialogs reachability
+- Z-order visual reorder at runtime
+
 ### After Slice 1
 
 - Slice 2: Layer panel + opacity/z-order controls
