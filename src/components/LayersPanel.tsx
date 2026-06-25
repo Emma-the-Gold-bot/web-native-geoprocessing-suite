@@ -19,6 +19,10 @@ interface LayersPanelProps {
   onToggleVisibility: (artifactId: string) => void;
   onChangeOpacity: (artifactId: string, opacity: number) => void;
   onReorder: (artifactId: string, direction: 'up' | 'down') => void;
+  /** Optional CTA handlers for empty states */
+  onImportFile?: () => void;
+  onLoadSampleData?: () => void;
+  onOpenDiscover?: () => void;
 }
 
 export default function LayersPanel({
@@ -36,6 +40,9 @@ export default function LayersPanel({
   onToggleVisibility,
   onChangeOpacity,
   onReorder,
+  onImportFile,
+  onLoadSampleData,
+  onOpenDiscover,
 }: LayersPanelProps) {
   // Determine z-order bounds for disabling up/down buttons
   const spatialArtifacts = artifacts.filter((a) => a.spatial);
@@ -60,7 +67,28 @@ export default function LayersPanel({
 
       <h3 className="panel-title" style={{ marginTop: 16 }}>Artifacts</h3>
       <div className="artifact-list">
-        {artifacts.length === 0 && <div className="card muted">No project artifacts yet. Import data to begin.</div>}
+        {artifacts.length === 0 && (
+          <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
+            <div className="muted small" style={{ marginBottom: 'var(--space-3)' }}>No project artifacts yet. Import data to begin.</div>
+            <div className="empty-state-actions">
+              {onImportFile && (
+                <button className="secondary empty-state-btn" onClick={onImportFile}>
+                  Import file
+                </button>
+              )}
+              {onLoadSampleData && (
+                <button className="secondary empty-state-btn" onClick={onLoadSampleData}>
+                  Try sample data
+                </button>
+              )}
+              {onOpenDiscover && (
+                <button className="empty-state-link" onClick={onOpenDiscover}>
+                  Discover data →
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {artifacts.map((artifact) => {
           const settings = layerSettings[artifact.id];
           const isSpatial = artifact.spatial;
@@ -153,7 +181,16 @@ export default function LayersPanel({
 
       <h3 className="panel-title" style={{ marginTop: 16 }}>Saved Queries</h3>
       <div className="artifact-list">
-        {savedQueries.length === 0 && <div className="card muted">No saved queries yet.</div>}
+        {savedQueries.length === 0 && (
+          <div className="card" style={{ textAlign: 'center', padding: 'var(--space-3)' }}>
+            <div className="muted small" style={{ marginBottom: 'var(--space-2)' }}>No saved queries yet.</div>
+            <div className="empty-state-actions">
+              <button className="empty-state-link" onClick={() => setShowSaveQueryDialog(true)}>
+                Save your first query
+              </button>
+            </div>
+          </div>
+        )}
         {savedQueries.map((query) => (
           <div
             key={query.id}

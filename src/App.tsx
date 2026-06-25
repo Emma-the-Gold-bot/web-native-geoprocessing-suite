@@ -2935,6 +2935,9 @@ function App() {
               onToggleVisibility={toggleLayerVisibility}
               onChangeOpacity={changeLayerOpacity}
               onReorder={reorderLayer}
+              onImportFile={() => importFileRef.current?.click()}
+              onLoadSampleData={openSampleImport}
+              onOpenDiscover={() => setActiveSidebar('discover')}
             />
           )}
 
@@ -3074,6 +3077,9 @@ function App() {
 
           if (!title) return null
 
+          // Hide the centered map overlay when a sidebar drawer is open (redundant with drawer CTAs)
+          if (activeSidebar) return null
+
           return (
             <div style={{
               position: 'absolute',
@@ -3098,6 +3104,17 @@ function App() {
                 {hint && (
                   <div className="muted small" style={{ marginTop: 8 }}>
                     {hint}
+                  </div>
+                )}
+                {/* Import CTA — only shown for the neutral "no data" empty state */}
+                {tone === 'neutral' && (
+                  <div className="empty-state-actions" style={{ marginTop: 'var(--space-3)', pointerEvents: 'auto' }}>
+                    <button className="secondary empty-state-btn" onClick={() => importFileRef.current?.click()}>
+                      Import file
+                    </button>
+                    <button className="secondary empty-state-btn" onClick={openSampleImport}>
+                      Try sample data
+                    </button>
                   </div>
                 )}
               </div>

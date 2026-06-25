@@ -1,8 +1,11 @@
 /**
- * Tests for LayersPanel component (Slice 3 — layer controls).
+ * Tests for LayersPanel component (Slice 3 — layer controls, Slice 4.2 — empty state CTAs).
  *
- * Tests that layer controls (visibility, opacity, z-order) render correctly
- * for spatial artifacts and are absent for non-spatial artifacts.
+ * Tests that:
+ * - Layer controls (visibility, opacity, z-order) render correctly for spatial artifacts
+ * - Empty state CTAs (Import file, Try sample data, Discover data) render and fire handlers
+ * - Saved queries empty state has "Save your first query" CTA
+ * - CTAs are keyboard accessible
  */
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -412,5 +415,234 @@ describe('LayersPanel — keyboard accessibility', () => {
     expect(innerButtons.length).toBeGreaterThan(0)
     // The visibility toggle should still work
     expect(screen.getByTitle('Hide layer')).toBeTruthy()
+  })
+})
+
+// ─── Empty state CTAs (Slice 4.2) ────────────────────────────────────────
+//
+// Slice 4.2 replaces passive empty-state text with actionable CTAs:
+// - "Import file" button → triggers file picker
+// - "Try sample data" button → loads sample GeoJSON
+// - "Discover data →" link → opens Discovery panel
+// - "Save your first query" link → opens save query dialog
+
+describe('LayersPanel — empty state CTAs (artifacts)', () => {
+  const ctaProps = {
+    onImportFile: vi.fn(),
+    onLoadSampleData: vi.fn(),
+    onOpenDiscover: vi.fn(),
+  }
+
+  it('renders empty state text for accessibility (screen readers)', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        {...ctaProps}
+      />,
+    )
+    expect(screen.getByText('No project artifacts yet. Import data to begin.')).toBeTruthy()
+  })
+
+  it('renders Import file button in empty state', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        {...ctaProps}
+      />,
+    )
+    expect(screen.getByText('Import file')).toBeTruthy()
+  })
+
+  it('Import file button triggers the onImportFile handler', () => {
+    const onImportFile = vi.fn()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        onImportFile={onImportFile}
+        onLoadSampleData={ctaProps.onLoadSampleData}
+        onOpenDiscover={ctaProps.onOpenDiscover}
+      />,
+    )
+    fireEvent.click(screen.getByText('Import file'))
+    expect(onImportFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders Try sample data button', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        {...ctaProps}
+      />,
+    )
+    expect(screen.getByText('Try sample data')).toBeTruthy()
+  })
+
+  it('Try sample data button triggers the onLoadSampleData handler', () => {
+    const onLoadSampleData = vi.fn()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        onImportFile={ctaProps.onImportFile}
+        onLoadSampleData={onLoadSampleData}
+        onOpenDiscover={ctaProps.onOpenDiscover}
+      />,
+    )
+    fireEvent.click(screen.getByText('Try sample data'))
+    expect(onLoadSampleData).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders Discover data link', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        {...ctaProps}
+      />,
+    )
+    expect(screen.getByText(/Discover data/)).toBeTruthy()
+  })
+
+  it('Discover data link triggers the onOpenDiscover handler', () => {
+    const onOpenDiscover = vi.fn()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        onImportFile={ctaProps.onImportFile}
+        onLoadSampleData={ctaProps.onLoadSampleData}
+        onOpenDiscover={onOpenDiscover}
+      />,
+    )
+    fireEvent.click(screen.getByText(/Discover data/))
+    expect(onOpenDiscover).toHaveBeenCalledTimes(1)
+  })
+
+  it('Import file button is keyboard accessible (focusable)', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        {...ctaProps}
+      />,
+    )
+    const button = screen.getByText('Import file')
+    // <button> is natively focusable — verify it's a real button
+    expect(button.tagName).toBe('BUTTON')
+    expect(button.getAttribute('disabled')).toBeNull()
+  })
+
+  it('Discover data link is keyboard accessible (focusable button)', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        {...ctaProps}
+      />,
+    )
+    const link = screen.getByText(/Discover data/)
+    // It's rendered as a <button> with a link-like class
+    expect(link.tagName).toBe('BUTTON')
+  })
+
+  it('CTA buttons are NOT rendered when handlers are not provided', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        // no onImportFile, onLoadSampleData, or onOpenDiscover
+      />,
+    )
+    expect(screen.queryByText('Import file')).toBeNull()
+    expect(screen.queryByText('Try sample data')).toBeNull()
+    expect(screen.queryByText(/Discover data/)).toBeNull()
+    // Empty state text is still present
+    expect(screen.getByText('No project artifacts yet. Import data to begin.')).toBeTruthy()
+  })
+
+  it('CTAs do NOT appear when artifacts exist', () => {
+    const spatial = makeSpatialArtifact()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[spatial]}
+        layerSettings={makeLayerSettings([spatial])}
+        {...ctaProps}
+      />,
+    )
+    expect(screen.queryByText('Import file')).toBeNull()
+    expect(screen.queryByText('Try sample data')).toBeNull()
+    expect(screen.queryByText(/Discover data/)).toBeNull()
+  })
+})
+
+describe('LayersPanel — empty state CTA (saved queries)', () => {
+  it('renders Save your first query link when no saved queries', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        savedQueries={[]}
+      />,
+    )
+    expect(screen.getByText('Save your first query')).toBeTruthy()
+  })
+
+  it('Save your first query link triggers setShowSaveQueryDialog', () => {
+    const setShowSaveQueryDialog = vi.fn()
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        savedQueries={[]}
+        setShowSaveQueryDialog={setShowSaveQueryDialog}
+      />,
+    )
+    fireEvent.click(screen.getByText('Save your first query'))
+    expect(setShowSaveQueryDialog).toHaveBeenCalledWith(true)
+  })
+
+  it('Save your first query link is keyboard accessible', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        savedQueries={[]}
+      />,
+    )
+    const link = screen.getByText('Save your first query')
+    expect(link.tagName).toBe('BUTTON')
+  })
+
+  it('Save your first query does NOT appear when saved queries exist', () => {
+    const query: SavedQuery = {
+      id: 'q1',
+      name: 'Test Query',
+      sql: 'SELECT 1',
+      createdAt: new Date().toISOString(),
+    }
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        savedQueries={[query]}
+      />,
+    )
+    expect(screen.queryByText('Save your first query')).toBeNull()
+  })
+
+  it('empty state text is still present for accessibility', () => {
+    render(
+      <LayersPanel
+        {...defaultProps}
+        artifacts={[]}
+        savedQueries={[]}
+      />,
+    )
+    expect(screen.getByText('No saved queries yet.')).toBeTruthy()
   })
 })
