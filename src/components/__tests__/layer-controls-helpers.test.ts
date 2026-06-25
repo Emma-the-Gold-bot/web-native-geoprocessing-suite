@@ -46,22 +46,9 @@ describe('reconcileLayerSettings', () => {
     expect(next['a1']).toEqual({ visible: true, opacity: 1.0, zIndex: 0 })
   })
 
-  it('CURRENT BEHAVIOR: multiple new artifacts get same zIndex (latent bug, see follow-up)', () => {
-    // The current implementation reads `existingMaxZ` from `prev` (not `next`),
-    // so when 3 new artifacts are added to an empty map in one pass, all get
-    // zIndex = 0 (because prev is empty, so existingMaxZ = -1, then +1 = 0).
-    //
-    // In practice this rarely fires because:
-    //   - artifacts are usually added one at a time, and the effect re-runs
-    //     between each add (so prev grows incrementally)
-    //   - LayersPanel doesn't depend on zIndex uniqueness for rendering
-    //     (the sort uses Math.max/min and the disable logic just needs
-    //     a stable top/bottom, which works even with duplicate zIndex)
-    //
-    // But it IS a latent bug. Fix (follow-up): change to read from `next`
-    // instead of `prev` so each newly-added artifact gets a unique zIndex.
-    //
-    // See SLICE_3_5_REVIEW.md for details.
+  it('FIXED (Slice 3.6): multiple new artifacts get incrementing zIndex', () => {
+    // Slice 3.6 fix: existingMaxZ is now read from `next` (not `prev`) so each
+    // newly-added artifact gets a unique zIndex even when added in one pass.
     const { next } = reconcileLayerSettings(
       {},
       [
@@ -71,8 +58,43 @@ describe('reconcileLayerSettings', () => {
       ],
     )
     expect(next['a1'].zIndex).toBe(0)
-    expect(next['a2'].zIndex).toBe(0) // CURRENT BEHAVIOR — should be 1
-    expect(next['a3'].zIndex).toBe(0) // CURRENT BEHAVIOR — should be 2
+    expect(next['a2'].zIndex).toBe(1)
+    expect(next['a3'].zIndex).toBe(2)
+  })
+
+  it('FIXED (Slice 3.6): 5 new artifacts added in one pass get zIndex 0..4', () => {
+    const { next } = reconcileLayerSettings(
+      {},
+      [
+        { id: 'a1', spatial: true },
+        { id: 'a2', spatial: true },
+        { id: 'a3', spatial: true },
+        { id: 'a4', spatial: true },
+        { id: 'a5', spatial: true },
+      ],
+    )
+    expect(next['a1'].zIndex).toBe(0)
+    expect(next['a2'].zIndex).toBe(1)
+    expect(next['a3'].zIndex).toBe(2)
+    expect(next['a4'].zIndex).toBe(3)
+    expect(next['a5'].zIndex).toBe(4)
+  })
+
+  it('FIXED (Slice 3.6): new artifacts added above existing max-z', () => {
+    const prev: SettingsMap = {
+      a: { visible: true, opacity: 1.0, zIndex: 10 },
+    }
+    const { next } = reconcileLayerSettings(
+      prev,
+      [
+        { id: 'a', spatial: true },
+        { id: 'b', spatial: true },
+        { id: 'c', spatial: true },
+      ],
+    )
+    expect(next['a'].zIndex).toBe(10) // preserved
+    expect(next['b'].zIndex).toBe(11) // first new gets max+1
+    expect(next['c'].zIndex).toBe(12) // second new gets prev-new-max+1
   })
 
   it('assigns unique zIndex above existing max when adding to populated map (correct case)', () => {
@@ -132,33 +154,10 @@ describe('reconcileLayerSettings', () => {
     expect(next['t1']).toBeUndefined()
   })
 
-  it('CURRENT BEHAVIOR: does not remove stale settings for non-spatial artifacts still in list (latent bug)', () => {
-    // The cleanup loop checks whether each prev entry's artifact is still
-    // in the artifact list, but does NOT check whether it's spatial.
-    //
-    // Edge case: if an artifact's `spatial` flag was flipped from true → false
-    // while its settings still exist in prev, those settings WILL stay in
-    // the map (because the artifact is still in the list).
-    //
-    // In practice this rarely fires because:
-    //   - The add loop never creates entries for non-spatial artifacts,
-    //     so stale entries can only exist from a prior `spatial: true`
-    //     state — which is rare (artifact type is set on import and
-    //     doesn't flip during a session)
-    //   - The map-sync effect filters by .spatial before reading settings,
-    //     so stale entries are never actually used
-    //
-    // Fix (follow-up): make the cleanup loop also check `artifact.spatial`:
-    //
-    //   for (const id of Object.keys(prev)) {
-    //     const artifact = artifacts.find((a) => a.id === id)
-    //     if (!artifact || !artifact.spatial) {
-    //       changed = true
-    //       delete next[id]
-    //     }
-    //   }
-    //
-    // See SLICE_3_5_REVIEW.md for details.
+  it('FIXED (Slice 3.6): cleans up stale settings for non-spatial artifacts still in list', () => {
+    // Slice 3.6 fix: cleanup loop now checks `artifact.spatial` so stale
+    // entries for non-spatial artifacts get removed even if the artifact
+    // is still in the list (e.g. spatial flag was flipped true → false).
     const prev: SettingsMap = {
       a1: { visible: true, opacity: 1.0, zIndex: 0 },
       t1: { visible: true, opacity: 1.0, zIndex: 1 }, // stale
@@ -170,10 +169,44 @@ describe('reconcileLayerSettings', () => {
         { id: 't1', spatial: false },
       ],
     )
-    // CURRENT BEHAVIOR — t1 stays because it's in the list (just non-spatial):
-    expect(changed).toBe(false)
+    expect(changed).toBe(true)
     expect(next['a1']).toBeDefined()
-    expect(next['t1']).toBeDefined() // CURRENT BEHAVIOR — should be cleaned up
+    expect(next['t1']).toBeUndefined()
+  })
+
+  it('FIXED (Slice 3.6): preserves spatial artifact settings when still in list', () => {
+    const prev: SettingsMap = {
+      a1: { visible: false, opacity: 0.5, zIndex: 3 },
+    }
+    const { next, changed } = reconcileLayerSettings(
+      prev,
+      [{ id: 'a1', spatial: true }],
+    )
+    expect(changed).toBe(false)
+    expect(next['a1']).toEqual({ visible: false, opacity: 0.5, zIndex: 3 })
+  })
+
+  it('FIXED (Slice 3.6): cleans up multiple stale entries in one pass', () => {
+    const prev: SettingsMap = {
+      a1: { visible: true, opacity: 1.0, zIndex: 0 },
+      t1: { visible: true, opacity: 1.0, zIndex: 1 },
+      t2: { visible: true, opacity: 1.0, zIndex: 2 },
+      a2: { visible: true, opacity: 1.0, zIndex: 3 },
+    }
+    const { next, changed } = reconcileLayerSettings(
+      prev,
+      [
+        { id: 'a1', spatial: true },
+        { id: 'a2', spatial: true },
+        { id: 't1', spatial: false }, // stale
+        { id: 't2', spatial: false }, // stale
+      ],
+    )
+    expect(changed).toBe(true)
+    expect(next['a1']).toBeDefined()
+    expect(next['a2']).toBeDefined()
+    expect(next['t1']).toBeUndefined()
+    expect(next['t2']).toBeUndefined()
   })
 
   it('removes settings for artifacts no longer in artifact list (correct case)', () => {
@@ -307,14 +340,32 @@ describe('toggleLayerVisibility', () => {
   // when it's shipped.
   //
   // See SLICE_3_REVIEW.md "Nice to have" #3 and SLICE_3_5_REVIEW.md.
-  it('CURRENTLY BROKEN: creates partial entry when artifactId missing', () => {
+  it('FIXED (Slice 3.6): creates complete entry with defaults when artifactId missing', () => {
+    // Slice 3.6 fix: missing-entry now creates a complete entry with
+    // DEFAULT_LAYER_SETTINGS.opacity and zIndex: 0 instead of leaving
+    // opacity/zIndex undefined.
     const prev: SettingsMap = {}
     const next = toggleLayerVisibility(prev, 'a1')
-    // The visible flip works (undefined → true):
     expect(next['a1'].visible).toBe(true)
-    // But the entry is incomplete — opacity and zIndex are missing:
-    expect(next['a1'].opacity).toBeUndefined()
-    expect(next['a1'].zIndex).toBeUndefined()
+    expect(next['a1'].opacity).toBe(DEFAULT_LAYER_SETTINGS.opacity)
+    expect(next['a1'].zIndex).toBe(0)
+  })
+
+  it('FIXED (Slice 3.6): toggling missing entry twice flips visible to false', () => {
+    const next = toggleLayerVisibility(toggleLayerVisibility({}, 'a1'), 'a1')
+    expect(next['a1'].visible).toBe(false)
+    expect(next['a1'].opacity).toBe(DEFAULT_LAYER_SETTINGS.opacity)
+    expect(next['a1'].zIndex).toBe(0)
+  })
+
+  it('FIXED (Slice 3.6): toggling existing entry preserves opacity and zIndex', () => {
+    const prev: SettingsMap = {
+      a1: { visible: true, opacity: 0.7, zIndex: 5 },
+    }
+    const next = toggleLayerVisibility(prev, 'a1')
+    expect(next['a1'].visible).toBe(false)
+    expect(next['a1'].opacity).toBe(0.7)
+    expect(next['a1'].zIndex).toBe(5)
   })
 })
 

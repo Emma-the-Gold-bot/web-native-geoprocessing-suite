@@ -24,13 +24,14 @@ export function reconcileLayerSettings(
     if (!next[artifact.id]) {
       changed = true
       // zIndex starts above existing max to place new artifacts on top
-      const existingMaxZ = Math.max(-1, ...Object.values(prev).map((s) => s.zIndex))
+      const existingMaxZ = Math.max(-1, ...Object.values(next).map((s) => s.zIndex))
       next[artifact.id] = { ...DEFAULT_LAYER_SETTINGS, zIndex: existingMaxZ + 1 }
     }
   })
-  // Clean up settings for removed artifacts
+  // Clean up settings for removed or non-spatial artifacts
   for (const id of Object.keys(prev)) {
-    if (!artifacts.some((a) => a.id === id)) {
+    const artifact = artifacts.find((a) => a.id === id)
+    if (!artifact || !artifact.spatial) {
       changed = true
       delete next[id]
     }
@@ -40,9 +41,16 @@ export function reconcileLayerSettings(
 
 /** Flip the `visible` field for the given artifact. */
 export function toggleLayerVisibility(prev: SettingsMap, artifactId: string): SettingsMap {
+  const existing = prev[artifactId]
+  if (existing) {
+    return {
+      ...prev,
+      [artifactId]: { ...existing, visible: !existing.visible },
+    }
+  }
   return {
     ...prev,
-    [artifactId]: { ...prev[artifactId], visible: !prev[artifactId]?.visible },
+    [artifactId]: { ...DEFAULT_LAYER_SETTINGS, zIndex: 0, visible: true },
   }
 }
 
