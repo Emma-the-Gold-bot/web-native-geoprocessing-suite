@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { discover, geocode, type DiscoveryResult as ApiDiscoveryResult, type DiscoveryCandidate } from '../lib/discovery';
 import type { BBox } from '../types';
+import { MapPin } from 'lucide-react';
 
 type PanelState = 'idle' | 'geocoding' | 'confirming' | 'searching' | 'results';
 
@@ -167,8 +168,8 @@ export function DiscoveryPanel({ onImport, onBboxPreview }: DiscoveryPanelProps)
             borderRadius: 6,
             border: '1px solid #334155',
           }}>
-            <div className="small" style={{ marginBottom: 8, fontWeight: 600 }}>
-              📍 Area of interest{displayName ? `: ${displayName}` : placeName ? `: ${placeName}` : ''}
+            <div className="small" style={{ marginBottom: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <MapPin size={14} strokeWidth={1.5} aria-hidden="true" /> Area of interest{displayName ? `: ${displayName}` : placeName ? `: ${placeName}` : ''}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
               <label className="small">

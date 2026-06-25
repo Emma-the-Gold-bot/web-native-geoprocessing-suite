@@ -2,6 +2,7 @@
 import type { Artifact, SavedQuery, LayerSettings } from '../types';
 import { formatCount } from '../lib/utils';
 import { getArtifactOutputKind, getArtifactOutputKindLabel } from './operation-ui';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface LayersPanelProps {
   projectName: string;
@@ -109,7 +110,7 @@ export default function LayersPanel({
                       title={isVisible ? 'Hide layer' : 'Show layer'}
                       onClick={() => onToggleVisibility(artifact.id)}
                     >
-                      {isVisible ? '👁' : '🚫'}
+                      {isVisible ? <Eye size={16} strokeWidth={1.5} aria-hidden="true" /> : <EyeOff size={16} strokeWidth={1.5} aria-hidden="true" />}
                     </button>
                     <label className="layer-opacity-control">
                       <input

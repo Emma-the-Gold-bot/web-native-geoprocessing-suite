@@ -860,3 +860,165 @@ button.link:hover {
   opacity: 0.3;
   cursor: default;
 }
+
+/* ─── Icon button styles (lucide-react SVGs) ─── */
+
+.sidebar-rail-btn svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.sidebar-rail-btn:hover svg {
+  color: var(--accent-primary, #14b8a6);
+}
+
+/* Header action buttons: icon + text layout */
+.actions .secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.actions .secondary svg {
+  flex-shrink: 0;
+}
+
+/* Sidebar drawer backdrop (mobile only — hidden on desktop) */
+.sidebar-drawer-backdrop {
+  display: none;
+}
+
+/* ─── Tablet breakpoint (768px and below) ─── */
+@media (max-width: 768px) {
+  /* Top bar: reduce padding, hide button labels */
+  .topbar {
+    padding: 0 var(--space-3);
+  }
+
+  .topbar strong {
+    font-size: var(--text-sm);
+  }
+
+  .topbar .muted {
+    font-size: var(--text-xs);
+    max-width: 30vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .actions {
+    gap: var(--space-1) !important;
+  }
+
+  .btn-text {
+    display: none;
+  }
+
+  .actions .secondary {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  /* Sidebar rail: slightly larger touch targets */
+  .sidebar-rail {
+    width: 56px;
+  }
+
+  .sidebar-rail-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .sidebar-rail-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Command bar: full width minus sidebar rail */
+  .command-bar {
+    left: 56px;
+    right: var(--space-2);
+    width: auto;
+    height: 52px;
+  }
+
+  .command-bar-input {
+    font-size: var(--text-base);
+  }
+
+  .command-surface {
+    left: 56px;
+    right: var(--space-2);
+    width: auto;
+  }
+
+  /* Sidebar drawer: full width after rail */
+  .sidebar-drawer {
+    left: 56px;
+    right: 0;
+    width: auto;
+  }
+
+  /* Backdrop visible on mobile when open */
+  .sidebar-drawer-backdrop.open {
+    display: block;
+    position: fixed;
+    top: 56px;
+    left: 56px;
+    right: 0;
+    bottom: 72px;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 24;
+  }
+
+  /* Bottom dock: offset from new sidebar width */
+  .bottom-dock {
+    left: 56px;
+  }
+}
+
+/* ─── Mobile breakpoint (480px and below) ─── */
+@media (max-width: 480px) {
+  .topbar {
+    padding: 0 var(--space-2);
+  }
+
+  .topbar strong {
+    font-size: var(--text-xs);
+  }
+
+  .sidebar-rail {
+    width: 48px;
+  }
+
+  .sidebar-rail-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .sidebar-rail-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .command-bar {
+    left: 48px;
+    height: 48px;
+  }
+
+  .command-surface {
+    left: 48px;
+  }
+
+  .sidebar-drawer {
+    left: 48px;
+  }
+
+  .sidebar-drawer-backdrop.open {
+    left: 48px;
+  }
+
+  .bottom-dock {
+    left: 48px;
+  }
+}

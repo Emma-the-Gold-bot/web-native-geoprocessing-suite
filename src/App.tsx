@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen } from 'lucide-react'
 import type { DisplayTransformStatus } from './lib/spatial/display-transform'
 import maplibregl from 'maplibre-gl'
 import type { Artifact, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence, LayerSettings } from './types'
@@ -2834,15 +2835,25 @@ function App() {
           </div>
         </div>
         <div className="actions" style={{ marginTop: 0, gap: 8 }}>
-          <button className="secondary" onClick={handleNewProject}>New</button>
-          <button className="secondary" onClick={() => setShowSaveDialog(true)}>Save Project</button>
-          <button className="secondary" onClick={handleOpenProject}>Open Project</button>
+          <button className="secondary" onClick={handleNewProject} aria-label="New project">
+            <FilePlus size={18} strokeWidth={1.5} aria-hidden="true" />
+            <span className="btn-text">New</span>
+          </button>
+          <button className="secondary" onClick={() => setShowSaveDialog(true)} aria-label="Save project">
+            <Save size={18} strokeWidth={1.5} aria-hidden="true" />
+            <span className="btn-text">Save Project</span>
+          </button>
+          <button className="secondary" onClick={handleOpenProject} aria-label="Open project">
+            <FolderOpen size={18} strokeWidth={1.5} aria-hidden="true" />
+            <span className="btn-text">Open Project</span>
+          </button>
           <button
             className="secondary"
             title="Settings"
+            aria-label="Settings"
             onClick={() => addToast('Settings panel coming in a later slice.', 'info')}
           >
-            ⚙
+            <Settings size={18} strokeWidth={1.5} aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -2852,37 +2863,42 @@ function App() {
         <button
           className={`sidebar-rail-btn ${activeSidebar === 'layers' ? 'active' : ''}`}
           title="Layers"
+          aria-label="Layers"
           onClick={() => toggleSidebar('layers')}
         >
-          🗺️
+          <Layers size={24} strokeWidth={1.5} aria-hidden="true" />
         </button>
         <button
           className={`sidebar-rail-btn ${activeSidebar === 'discover' ? 'active' : ''}`}
           title="Discover"
+          aria-label="Discover"
           onClick={() => toggleSidebar('discover')}
         >
-          🔍
+          <Search size={24} strokeWidth={1.5} aria-hidden="true" />
         </button>
         <button
           className="sidebar-rail-btn"
           title="Import"
+          aria-label="Import"
           onClick={() => importFileRef.current?.click()}
         >
-          ➕
+          <Plus size={24} strokeWidth={1.5} aria-hidden="true" />
         </button>
         <button
           className={`sidebar-rail-btn ${activeSidebar === 'query' ? 'active' : ''}`}
           title="Query"
+          aria-label="Query"
           onClick={() => toggleSidebar('query')}
         >
-          💬
+          <MessageSquare size={24} strokeWidth={1.5} aria-hidden="true" />
         </button>
         <button
           className={`sidebar-rail-btn ${rightPanelOpen ? 'active' : ''}`}
           title="History"
+          aria-label="History"
           onClick={() => setRightPanelOpen(prev => !prev)}
         >
-          ⌛
+          <History size={24} strokeWidth={1.5} aria-hidden="true" />
         </button>
         <input
           ref={importFileRef}
@@ -2893,6 +2909,12 @@ function App() {
           style={{ display: 'none' }}
         />
       </nav>
+
+      {/* Sidebar drawer backdrop (mobile) */}
+      <div
+        className={`sidebar-drawer-backdrop ${activeSidebar ? 'open' : ''}`}
+        onClick={() => setActiveSidebar(null)}
+      />
 
       {/* Sidebar drawer */}
       {activeSidebar && (

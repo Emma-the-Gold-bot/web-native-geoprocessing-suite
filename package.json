@@ -12,6 +12,7 @@
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.30.0",
     "geos-wasm": "^3.1.1",
+    "lucide-react": "^1.21.0",
     "maplibre-gl": "^5.3.0",
     "proj-wasm": "^0.1.0-alpha7",
     "react": "^19.1.1",
