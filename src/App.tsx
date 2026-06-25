@@ -2867,6 +2867,7 @@ function App() {
           onClick={() => toggleSidebar('layers')}
         >
           <Layers size={24} strokeWidth={1.5} aria-hidden="true" />
+          <span className="sidebar-rail-label">Layers</span>
         </button>
         <button
           className={`sidebar-rail-btn ${activeSidebar === 'discover' ? 'active' : ''}`}
@@ -2875,14 +2876,16 @@ function App() {
           onClick={() => toggleSidebar('discover')}
         >
           <Search size={24} strokeWidth={1.5} aria-hidden="true" />
+          <span className="sidebar-rail-label">Discover</span>
         </button>
         <button
-          className="sidebar-rail-btn"
+          className="sidebar-rail-btn import-btn"
           title="Import"
           aria-label="Import"
           onClick={() => importFileRef.current?.click()}
         >
           <Plus size={24} strokeWidth={1.5} aria-hidden="true" />
+          <span className="sidebar-rail-label">Import</span>
         </button>
         <button
           className={`sidebar-rail-btn ${activeSidebar === 'query' ? 'active' : ''}`}
@@ -2891,6 +2894,7 @@ function App() {
           onClick={() => toggleSidebar('query')}
         >
           <MessageSquare size={24} strokeWidth={1.5} aria-hidden="true" />
+          <span className="sidebar-rail-label">Query</span>
         </button>
         <button
           className={`sidebar-rail-btn ${rightPanelOpen ? 'active' : ''}`}
@@ -2899,6 +2903,7 @@ function App() {
           onClick={() => setRightPanelOpen(prev => !prev)}
         >
           <History size={24} strokeWidth={1.5} aria-hidden="true" />
+          <span className="sidebar-rail-label">History</span>
         </button>
         <input
           ref={importFileRef}
