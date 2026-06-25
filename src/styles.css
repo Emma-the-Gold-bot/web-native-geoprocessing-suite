@@ -721,3 +721,124 @@ button.link {
 button.link:hover {
   color: #79c0ff;
 }
+
+/* ── Layer Controls (Slice 3) ── */
+
+.layer-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.layer-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  padding-top: var(--space-1);
+}
+
+.layer-visibility-toggle {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle, #30363d);
+  background: transparent;
+  color: var(--text-muted, #8b949e);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.layer-visibility-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6edf3;
+}
+
+.layer-visibility-toggle.invisible {
+  opacity: 0.5;
+}
+
+.layer-opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+
+.layer-opacity-slider {
+  width: 52px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #30363d;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.layer-opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #58a6ff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.layer-opacity-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #58a6ff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.layer-opacity-label {
+  font-size: var(--text-xs, 11px);
+  color: var(--text-muted, #8b949e);
+  min-width: 28px;
+  text-align: right;
+  user-select: none;
+}
+
+.layer-zorder-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.layer-zorder-btn {
+  width: 20px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle, #30363d);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted, #8b949e);
+  font-size: 8px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.layer-zorder-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6edf3;
+}
+
+.layer-zorder-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

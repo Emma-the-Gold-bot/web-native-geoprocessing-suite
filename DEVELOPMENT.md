@@ -78,6 +78,59 @@ Qwen 3.7+ validated as primary complex-code worker. First real dispatch was a sm
 
 ---
 
+## Slice 3 — Per-Artifact Layer Controls (COMPLETE 2026-06-24)
+
+### Status: COMPLETE (2026-06-24)
+
+Added per-artifact layer controls to the Layers sidebar panel:
+- **Visibility toggle** (👁/🚫) — show/hide artifact on map, source preserved
+- **Opacity slider** (0–100%, stored 0–1) — changes fill opacity on map immediately
+- **Z-order buttons** (▲/▼) — swap zIndex with adjacent spatial artifact, disabled at boundaries
+
+### Files
+
+| File | Change |
+|------|--------|
+| `src/types.ts` | +7 lines (`LayerSettings` interface) |
+| `src/App.tsx` | +97/-2 lines (state, 4 helpers, init useEffect, map-sync effect extensions) |
+| `src/components/LayersPanel.tsx` | +70 lines (controls rendered per spatial artifact, `stopPropagation` on each) |
+| `src/styles.css` | +121 lines (`.layer-controls`, `.layer-visibility-toggle`, `.layer-opacity-slider`, `.layer-zorder-btn`) |
+| `src/components/__tests__/layer-controls-helpers.test.ts` | 295 lines (26 tests) |
+| `src/components/__tests__/LayersPanel.test.tsx` | 289 lines (13 tests) |
+| `src/components/__tests__/map-sync-effect.test.ts` | 192 lines (12 tests) |
+| `SLICE_3_REVIEW.md` | Code review + coverage report |
+| `vitest.config.ts` | Test infrastructure (Vitest + jsdom) |
+
+### Test results
+- 51/51 tests passing in 1.28s
+- `npm run build` exit 0, 228 moduleshers
+- Build + tests run via `npm test` and `npm run build`
+
+### Dispatch pattern: COMPLEMENTARY (new 2026-06-24)
+
+First dispatch using the complementary pattern (implementer + tester, disjoint file scopes):
+- **Implementer:** Qwen 3.7+ wrote `src/types.ts`, `src/App.tsx`, `src/components/LayersPanel.tsx`, `src/styles.css` (5m 25s, 138k tokens)
+- **Tester:** MiMo v2.5 Pro wrote `src/components/__tests__/*` + `SLICE_3_REVIEW.md` + `vitest.config.ts` (16m 18s, 135k tokens)
+- **Judge:** GLM 5.2 synthesized impl + tests + review, checked 8 acceptance criteria against code evidence → ACCEPT verdict
+
+Zero file collision because implementer and tester owned disjoint file scopes by design.
+
+### Known limitations (follow-up slices)
+
+- **Z-order visual reorder:** MapLibre renders layers by add-order, not zIndex. State model is correct (buttons update zIndex, boundary disabling works), but visual reorder on already-rendered layers requires `map.moveLayer()` calls in the map-sync effect. TODO comment added at the relevant code path.
+- **Nested `<button>` HTML violation:** Artifact card is a `<button>` containing layer control `<button>`s. HTML-invalid, React warns in test output. Functionally works, but semantically wrong. Fix: change outer `<button>` to `<div role="button" tabIndex={0}>` with keyboard handlers.
+- **`toggleLayerVisibility` missing-entry edge case:** Creates entry with `undefined` opacity/zIndex. Unreachable through normal UI (init useEffect populates defaults before user can interact), but defensive fix recommended.
+- **Helper extraction for testability:** The 4 helpers (`updateLayerSetting`, `toggleLayerVisibility`, `changeLayerOpacity`, `reorderLayer`) are closures in App.tsx, so tests reimplement the logic to verify correctness. Extract to `src/lib/layer-controls.ts` for direct import.
+
+### Next slices (planned)
+
+- Slice 4: Geocode + discovery prefixes (`@osm`, `@ckan`, `@stac`) — command bar routing
+- Slice 5: Undo/redo stack
+- Slice 6: Nested button fix + helper extraction + `map.moveLayer()` z-order polish
+- Slice 7: Export menu in artifact context, keyboard shortcuts
+
+---
+
 ## Slice 1 — Map-First Shell + Chain Visualization (COMPLETE 2026-06-24)
 
 ### Goal

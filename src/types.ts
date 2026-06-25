@@ -110,6 +110,13 @@ export interface SavedQuery {
   lastRunAt?: string
 }
 
+// Per-artifact layer display settings (ephemeral, not persisted)
+export interface LayerSettings {
+  visible: boolean   // show/hide on map
+  opacity: number    // 0..1 (float)
+  zIndex: number     // integer, relative order
+}
+
 // Serializable project model (excludes runtime-only data)
 export interface ProjectState {
   version: string

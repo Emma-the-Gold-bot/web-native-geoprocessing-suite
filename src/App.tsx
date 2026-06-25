@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DisplayTransformStatus } from './lib/spatial/display-transform'
 import maplibregl from 'maplibre-gl'
-import type { Artifact, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence } from './types'
+import type { Artifact, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence, LayerSettings } from './types'
 import { sampleGeoJson } from './lib/sampleData'
 import { getDuckDb } from './lib/duckdb'
 import { formatTimestamp, inferGeometryType, getGeometryTypeSummary, getArtifactGeometryLabel, isFeatureCollection, makeId, formatCount } from './lib/utils'
@@ -427,6 +427,7 @@ function App() {
   const [history, setHistory] = useState<HistoryEvent[]>([])
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([])
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
+  const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({})
   const [pendingPostCommitSelectedArtifactId, setPendingPostCommitSelectedArtifactId] = useState<string | null>(null)
   const [bottomTab, setBottomTab] = useState<BottomTab>('table')
   const [bottomDockExpanded, setBottomDockExpanded] = useState(false)
@@ -667,6 +668,67 @@ function App() {
     setPendingPostCommitSelectedArtifactId(null)
   }, [artifacts, pendingPostCommitSelectedArtifactId, selectedArtifactId])
 
+  // Initialize layer settings for new artifacts (ephemeral, not persisted)
+  useEffect(() => {
+    setLayerSettings((prev) => {
+      const next = { ...prev }
+      let changed = false
+      // Assign default settings to new spatial artifacts
+      artifacts.forEach((artifact) => {
+        if (!artifact.spatial) return
+        if (!next[artifact.id]) {
+          changed = true
+          // zIndex starts above existing max to place new artifacts on top
+          const existingMaxZ = Math.max(-1, ...Object.values(prev).map((s) => s.zIndex))
+          next[artifact.id] = { visible: true, opacity: 1.0, zIndex: existingMaxZ + 1 }
+        }
+      })
+      // Clean up settings for removed artifacts
+      for (const id of Object.keys(prev)) {
+        if (!artifacts.some((a) => a.id === id)) {
+          changed = true
+          delete next[id]
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [artifacts])
+
+  // Layer control helpers
+  const toggleLayerVisibility = (artifactId: string) => {
+    setLayerSettings((prev) => ({
+      ...prev,
+      [artifactId]: { ...prev[artifactId], visible: !prev[artifactId]?.visible },
+    }))
+  }
+
+  const changeLayerOpacity = (artifactId: string, opacity: number) => {
+    setLayerSettings((prev) => ({
+      ...prev,
+      [artifactId]: { ...prev[artifactId], opacity: Math.max(0, Math.min(1, opacity)) },
+    }))
+  }
+
+  const reorderLayer = (artifactId: string, direction: 'up' | 'down') => {
+    setLayerSettings((prev) => {
+      const current = prev[artifactId]
+      if (!current) return prev
+      // Get all spatial artifact ids sorted by zIndex
+      const spatialIds = Object.keys(prev).sort((a, b) => prev[a].zIndex - prev[b].zIndex)
+      const idx = spatialIds.indexOf(artifactId)
+      if (idx === -1) return prev
+      if (direction === 'up' && idx >= spatialIds.length - 1) return prev // already on top
+      if (direction === 'down' && idx <= 0) return prev // already on bottom
+      const swapIdx = direction === 'up' ? idx + 1 : idx - 1
+      const swapId = spatialIds[swapIdx]
+      const newSettings = { ...prev }
+      // Swap the zIndex values
+      newSettings[artifactId] = { ...newSettings[artifactId], zIndex: prev[swapId].zIndex }
+      newSettings[swapId] = { ...newSettings[swapId], zIndex: prev[artifactId].zIndex }
+      return newSettings
+    })
+  }
+
   useEffect(() => {
     const container = mapNodeRef.current
     if (!container) return
@@ -729,6 +791,12 @@ function App() {
     const spatialArtifacts = artifacts.filter(
       (artifact) => artifact.spatial && isFeatureCollection(artifact.data),
     )
+    // Sort by zIndex (ascending — lower zIndex renders first / below)
+    spatialArtifacts.sort((a, b) => {
+      const za = layerSettings[a.id]?.zIndex ?? 0
+      const zb = layerSettings[b.id]?.zIndex ?? 0
+      return za - zb
+    })
 
     let cancelled = false
     const syncGeneration = ++mapSyncGenerationRef.current
@@ -793,9 +861,11 @@ function App() {
           })
         }
         
-        // Enhanced visibility settings for better polygon contrast
-        // Use higher opacity and brighter colors for better visibility
-        const fillOpacity = isSelected ? 0.65 : 0.45
+        // Layer settings: visibility gate + opacity
+        const settings = layerSettings[artifact.id] ?? { visible: true, opacity: 1.0, zIndex: 0 }
+        // TODO: Slice 4 — use map.moveLayer() for runtime z-order (currently layers render in add-order only)
+        const baseOpacity = settings.opacity
+        const fillOpacity = isSelected ? Math.min(baseOpacity + 0.2, 1.0) : baseOpacity
         const lineWidth = isSelected ? 3 : 2
         // Bright fill color - blue for selected, teal otherwise
         const fillColor = isSelected ? '#3b82f6' : '#14b8a6' // blue-500 vs teal-500
@@ -882,6 +952,19 @@ function App() {
         }
 
         if (mapSyncDebug.disableLayerSync) {
+          existingSourceIds.delete(sourceId)
+          existingSourceIds.delete(selectedSourceId)
+          continue
+        }
+
+        // Visibility gate: if layer is hidden, remove existing layers but keep source synced
+        if (!settings.visible) {
+          if (map.getLayer(fillId)) map.removeLayer(fillId)
+          if (map.getLayer(lineId)) map.removeLayer(lineId)
+          if (map.getLayer(pointId)) map.removeLayer(pointId)
+          if (map.getLayer(selectedFillId)) map.removeLayer(selectedFillId)
+          if (map.getLayer(selectedLineId)) map.removeLayer(selectedLineId)
+          if (map.getLayer(selectedPointId)) map.removeLayer(selectedPointId)
           existingSourceIds.delete(sourceId)
           existingSourceIds.delete(selectedSourceId)
           continue
@@ -1093,7 +1176,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [artifacts, selectedArtifactId])
+  }, [artifacts, selectedArtifactId, layerSettings])
 
   // Auto-fit map to selected artifact bounds
   // Uses display geometry normalization to handle projected CRS artifacts
@@ -2811,6 +2894,10 @@ function App() {
               handleLoadQuery={handleLoadQuery}
               handleDeleteQuery={handleDeleteQuery}
               setShowSaveQueryDialog={setShowSaveQueryDialog}
+              layerSettings={layerSettings}
+              onToggleVisibility={toggleLayerVisibility}
+              onChangeOpacity={changeLayerOpacity}
+              onReorder={reorderLayer}
             />
           )}
 
