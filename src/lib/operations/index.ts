@@ -21,9 +21,23 @@ export type {
   AttributePolicy,
   AttributeJoinFieldSelection,
   AttributeJoinExecutionContext,
+  IntentParameter,
+  IntentExample,
+  OperationIntent,
 } from './types';
 
 export { OPERATION_REGISTRY, getOperationDefinition } from './registry';
+export { OPERATION_INTENT_MAP } from './intent-data';
+export {
+  CHAIN_REGISTRY,
+  findChainsByTrigger,
+  findOperationsByTrigger,
+  type ChainStepInput,
+  type ChainStep,
+  type ChainParameter,
+  type ChainIntent,
+  type ChainDefinition,
+} from './chain-registry';
 export { getOperationSupportTier, isOperationSupported, getOperationSupportEnvelope } from './capabilities';
 export {
   getArtifactCrsState,

@@ -121,6 +121,7 @@ export interface OperationDefinition {
   warningCodes: WarningCode[];
   refusalCodes: WarningCode[];
   uiHints?: OperationUiHints;
+  intent?: OperationIntent;
 }
 
 export interface OperationExecutionContext {
@@ -143,4 +144,28 @@ export interface OperationExecutionOutcome {
 export interface OperationRefusal {
   code: WarningCode;
   message: string;
+}
+
+export interface IntentParameter {
+  name: string;
+  type: 'artifact' | 'number' | 'string' | 'field' | 'crs';
+  required: boolean;
+  description: string;
+  unit_hint?: string;
+  source?: 'primary' | 'secondary';
+  role?: 'source' | 'mask' | 'overlay' | 'join_table';
+}
+
+export interface IntentExample {
+  query: string;
+  resolution: string;
+}
+
+export interface OperationIntent {
+  triggers: string[];
+  description: string;
+  parameters: IntentParameter[];
+  typical_use: string;
+  examples: IntentExample[];
+  disambiguation?: string;
 }

@@ -68,6 +68,12 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 4173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
+    },
     headers: {
       // COOP/COEP headers enable SharedArrayBuffer for PROJ-WASM multi-threaded mode
       // Without these: PROJ-WASM falls back to single-threaded execution

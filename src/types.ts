@@ -121,3 +121,11 @@ export interface ProjectState {
   activeTab: 'table' | 'sql' | 'results'
   savedAt: string
 }
+
+// Discovery types
+export interface BBox {
+  west: number
+  south: number
+  east: number
+  north: number
+}

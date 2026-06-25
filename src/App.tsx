@@ -12,6 +12,8 @@ import { buildMaterializedQueryArtifact, buildQueryPreview, getQueryProvenanceSt
 import { getActiveWarnings, getCurrentNotes, getDeletedQueryStatusMessage, getExportFailureStatusMessage, getExportSuccessStatusMessage, getHistoryDetailGroups, getLoadedQueryStatusMessage, getProvenanceNotes, getQueryRenderIssue, getQueryRunStatusMessage, getSeverityLabel, getSuggestedQueryArtifactName, getWarningRecoveryHint, getWarningScope, getWarningScopeLabel, isWarning, buildQueryHistoryEvent } from './lib/product-surface'
 import { getSpatialEngine, executeRegisteredSingleInputOperation, executeRegisteredAggregationOperation, executeClipOperation, executeIntersectOperation, executeRegisteredMeasurementOperation, executeAttributeJoinOperation, getJoinableFieldNames, getDisplayBounds, getDisplayFeatureCollection, getSingleInputOperationPresentation, getAggregationOperationPresentation, getMeasurementOperationPresentation, getSingleInputGeometrySupport, getSingleInputOperationInfoWarning, getMeasurementUnitDisclosure, getMeasurementUnitRefusalWarning, getAttributeJoinPresentation, getAttributeJoinOutputFieldSelection, getOperationSuccessStatusMessage, getTopologyRoleContext, isProjectedCrs, needsDisplayTransformation, validateForClip, validateForIntersect, validateForReproject } from './lib/spatial'
 import { OperationContractDisplay, OperationExecutionShell, OperationOutputSemantics, OperationSecondarySelector, OperationSourceSummary, OperationFieldCheckboxList, TypedWarningPanel, artifactSummaryText, getArtifactOutputKind, getArtifactOutputKindLabel, getOperationWarningTone } from './components/operation-ui'
+import { NLQueryPanel } from './components/NLQueryPanel'
+import { DiscoveryPanel } from './components/DiscoveryPanel'
 
 type BottomTab = 'table' | 'sql' | 'results'
 type ImportStage = 'idle' | 'scanning' | 'review' | 'importing'
@@ -381,6 +383,26 @@ function getAttributeJoinDialogDefaults(selectedArtifact: Artifact, candidateArt
   }
 }
 
+function AccordionSection({ title, defaultOpen, children, badge }: {
+  title: string
+  defaultOpen?: boolean
+  badge?: string | number
+  children: React.ReactNode
+}) {
+  return (
+    <details open={defaultOpen} style={{ marginBottom: 8 }}>
+      <summary style={{ cursor: 'pointer', padding: '8px 0', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8b949e', fontWeight: 600, listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 10, transition: 'transform 0.15s' }}>▸</span>
+        {title}
+        {badge && <span className="badge" style={{ marginLeft: 'auto' }}>{badge}</span>}
+      </summary>
+      <div style={{ paddingLeft: 0, paddingTop: 4 }}>
+        {children}
+      </div>
+    </details>
+  )
+}
+
 function App() {
   const debugParams = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -406,6 +428,7 @@ function App() {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [pendingPostCommitSelectedArtifactId, setPendingPostCommitSelectedArtifactId] = useState<string | null>(null)
   const [bottomTab, setBottomTab] = useState<BottomTab>('table')
+  const [bottomDockExpanded, setBottomDockExpanded] = useState(false)
   const [sql, setSql] = useState(SAMPLE_SQL)
   const [queryPreview, setQueryPreview] = useState<QueryPreview | null>(null)
   const [queryError, setQueryError] = useState<string | null>(null)
@@ -416,6 +439,73 @@ function App() {
   const [selectedHistoryEventId, setSelectedHistoryEventId] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string>('Ready to import')
   
+  // Toast notification system
+  interface Toast {
+    id: string
+    message: string
+    type: 'success' | 'info' | 'warning' | 'error'
+    dismissible: boolean
+  }
+  const [toasts, setToasts] = useState<Toast[]>([])
+  
+  function addToast(message: string, type: Toast['type'] = 'info', dismissible = true) {
+    const id = makeId('toast')
+    setToasts(prev => [...prev, { id, message, type, dismissible }])
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id))
+      }, 5000)
+    }
+  }
+  
+  function dismissToast(id: string) {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }
+
+  // Slice 1: map-first shell state
+  type SidebarMode = 'layers' | 'discover' | 'query' | 'chain' | null
+  const [activeSidebar, setActiveSidebar] = useState<SidebarMode>(null)
+  const [rightPanelOpen, setRightPanelOpen] = useState(false)
+  const [commandInput, setCommandInput] = useState('')
+  const [commandFocused, setCommandFocused] = useState(false)
+  const importFileRef = useRef<HTMLInputElement>(null)
+
+  function toggleSidebar(mode: SidebarMode) {
+    setActiveSidebar(prev => (prev === mode ? null : mode))
+  }
+
+  function handleCommandChange(value: string) {
+    setCommandInput(value)
+    if (value.startsWith('/')) {
+      setActiveSidebar('query')
+      const sqlText = value.slice(1).trimStart()
+      if (sqlText) setSql(sqlText)
+    } else if (value.startsWith('@')) {
+      setActiveSidebar('discover')
+      const target = value.split(' ')[0].slice(1)
+      if (target === 'osm' || target === 'ckan' || target === 'stac') {
+        addToast(`Discovery prefix @${target} will route to DiscoveryPanel (placeholder)`, 'info')
+      }
+    } else if (value.trim()) {
+      setActiveSidebar('chain')
+    } else {
+      setActiveSidebar(null)
+    }
+  }
+
+  function applyExampleQuery(example: string) {
+    setCommandInput(example)
+    handleCommandChange(example)
+  }
+
+  const commandExamples = [
+    'Buffer the parcels by 500 feet',
+    'Clip parcels to Butte County and calculate area',
+    'Show me what\'s near the rivers',
+    'Join ownership to parcels by APN',
+    'Find the median income by census tract',
+  ]
+
   // Project persistence state
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -1093,6 +1183,7 @@ function App() {
   useEffect(() => {
     if (hasSavedProject()) {
       setStatusMessage('Found saved project. Click "Open Project" to load it.')
+      addToast('Found saved project. Click "Open Project" to load it.', 'info')
     }
   }, [])
 
@@ -1109,12 +1200,14 @@ function App() {
     setHasUnsavedChanges(false)
     setShowSaveDialog(false)
     setStatusMessage(`Project "${projectName}" saved successfully`)
+    addToast(`Project "${projectName}" saved successfully`, 'success')
   }
 
   const handleOpenProject = async () => {
     const loaded = loadProject()
     if (!loaded) {
       setStatusMessage('No saved project found')
+      addToast('No saved project found', 'warning')
       return
     }
 
@@ -1136,6 +1229,7 @@ function App() {
     setHistory(loaded.history || [])
     setHasUnsavedChanges(false)
     setStatusMessage(`Project "${loaded.name}" loaded successfully`)
+    addToast(`Project "${loaded.name}" loaded successfully`, 'success')
   }
 
   const handleNewProject = () => {
@@ -1154,20 +1248,24 @@ function App() {
     setBottomTab('table')
     setHasUnsavedChanges(false)
     setStatusMessage('New project created')
+    addToast('New project created', 'success')
   }
 
   // Export functions
   const handleExportGeoJson = () => {
     if (!selectedArtifact) {
       setStatusMessage(getExportFailureStatusMessage('missing-selection'))
+      addToast(getExportFailureStatusMessage('missing-selection'), 'error')
       return
     }
     const result = exportToGeoJson(selectedArtifact)
     if (result) {
       triggerDownload(result.blob, result.filename)
       setStatusMessage(getExportSuccessStatusMessage(selectedArtifact, 'GeoJSON'))
+      addToast(getExportSuccessStatusMessage(selectedArtifact, 'GeoJSON'), 'success')
     } else {
       setStatusMessage(getExportFailureStatusMessage('geojson'))
+      addToast(getExportFailureStatusMessage('geojson'), 'error')
     }
     setShowExportMenu(false)
   }
@@ -1175,14 +1273,17 @@ function App() {
   const handleExportJson = async () => {
     if (!selectedArtifact) {
       setStatusMessage(getExportFailureStatusMessage('missing-selection'))
+      addToast(getExportFailureStatusMessage('missing-selection'), 'error')
       return
     }
     const result = await exportToJson(selectedArtifact)
     if (result) {
       triggerDownload(result.blob, result.filename)
       setStatusMessage(getExportSuccessStatusMessage(selectedArtifact, 'JSON'))
+      addToast(getExportSuccessStatusMessage(selectedArtifact, 'JSON'), 'success')
     } else {
       setStatusMessage(getExportFailureStatusMessage('json'))
+      addToast(getExportFailureStatusMessage('json'), 'error')
     }
     setShowExportMenu(false)
   }
@@ -1191,6 +1292,7 @@ function App() {
   const handleSaveQuery = () => {
     if (!newQueryName.trim()) {
       setStatusMessage('Please enter a name for the query')
+      addToast('Please enter a name for the query', 'warning')
       return
     }
     const newQuery = createSavedQuery(newQueryName.trim(), sql)
@@ -1198,17 +1300,20 @@ function App() {
     setNewQueryName('')
     setShowSaveQueryDialog(false)
     setStatusMessage(`Query "${newQueryName}" saved`)
+    addToast(`Query "${newQueryName}" saved`, 'success')
   }
 
   const handleLoadQuery = (query: SavedQuery) => {
     setSql(query.sql)
     setBottomTab('sql')
     setStatusMessage(getLoadedQueryStatusMessage(query))
+    addToast(getLoadedQueryStatusMessage(query), 'info')
   }
 
   const handleDeleteQuery = (queryId: string) => {
     setSavedQueries((prev) => prev.filter((q) => q.id !== queryId))
     setStatusMessage(getDeletedQueryStatusMessage())
+    addToast(getDeletedQueryStatusMessage(), 'info')
   }
 
   const openSampleImport = () => {
@@ -1515,9 +1620,11 @@ function App() {
         setImportReview(null)
         setImportStage('idle')
         setStatusMessage(`Imported ${artifact.name}`)
+        addToast(`Imported ${artifact.name}`, 'success')
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown import/runtime error'
         setStatusMessage(`Import failed: ${message}. Review the import sheet and either fix the file or cancel the transaction.`)
+        addToast(`Import failed: ${message}. Review the import sheet and either fix the file or cancel the transaction.`, 'error')
         setImportStage('review')
       } finally {
         setImporting(false)
@@ -1530,6 +1637,7 @@ function App() {
     if (queryableArtifacts.length === 0) {
       setQueryError('Import a GeoJSON or GeoParquet dataset first. Queries can only run against registered artifact tables.')
       setStatusMessage('Query blocked: no registered tables exist yet. Import a dataset first.')
+      addToast('Query blocked: no registered tables exist yet. Import a dataset first.', 'warning')
       return
     }
 
@@ -1558,11 +1666,17 @@ function App() {
           sourceArtifacts,
         }))
         setBottomTab('results')
+        setBottomDockExpanded(true)
         setStatusMessage(getQueryRunStatusMessage({
           rowCount: rows.length,
           matchedArtifactCount: sourceArtifacts.length,
           referencedTableCount: referencedTables.length,
         }))
+        addToast(getQueryRunStatusMessage({
+          rowCount: rows.length,
+          matchedArtifactCount: sourceArtifacts.length,
+          referencedTableCount: referencedTables.length,
+        }), 'info')
       } finally {
         await conn.close()
       }
@@ -1570,6 +1684,7 @@ function App() {
       const message = error instanceof Error ? error.message : 'Unknown query error'
       setQueryError(message)
       setStatusMessage(`Query failed: ${message}. Check table names, SQL syntax, and whether the selected data was actually registered.`)
+      addToast(`Query failed: ${message}. Check table names, SQL syntax, and whether the selected data was actually registered.`, 'error')
     } finally {
       setQueryRunning(false)
     }
@@ -1640,6 +1755,7 @@ function App() {
       }
     } catch (error) {
       setStatusMessage(`Derived table registration failed: ${error instanceof Error ? error.message : 'unknown error'}. The preview still exists, but the result was not materialized into workspace truth.`)
+      addToast(`Derived table registration failed: ${error instanceof Error ? error.message : 'unknown error'}. The preview still exists, but the result was not materialized into workspace truth.`, 'error')
       setMaterializeStage('idle')
       setMaterializing(false)
       return
@@ -1675,6 +1791,7 @@ function App() {
     setHistory((current) => [eventRecord, ...current])
     setSelectedArtifactId(artifactId)
     setStatusMessage(`Created derived artifact ${artifact.name}`)
+    addToast(`Created derived artifact ${artifact.name}`, 'success')
     
     // Mark the preview as materialized so we don't show the "materialize" message anymore
     if (queryPreview) {
@@ -1704,6 +1821,7 @@ function App() {
     const distance = parseFloat(bufferDistance)
     if (isNaN(distance) || distance <= 0) {
       setStatusMessage('Buffer distance must be a positive number')
+      addToast('Buffer distance must be a positive number', 'warning')
       return
     }
 
@@ -1722,6 +1840,7 @@ function App() {
 
       if (result.error) {
         setStatusMessage(`Buffer failed: ${result.error}`)
+        addToast(`Buffer failed: ${result.error}`, 'error')
         return
       }
 
@@ -1734,10 +1853,12 @@ function App() {
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(`Buffer created: ${result.artifact!.name}`)
+        addToast(`Buffer created: ${result.artifact!.name}`, 'success')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Buffer failed: ${message}`)
+      addToast(`Buffer failed: ${message}`, 'error')
     } finally {
       setBufferRunning(false)
       setBufferName('')
@@ -1793,6 +1914,7 @@ function App() {
 
       if (result.error) {
         setStatusMessage(`Centroid failed: ${result.error}`)
+        addToast(`Centroid failed: ${result.error}`, 'error')
         return
       }
 
@@ -1804,10 +1926,12 @@ function App() {
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(`Centroid created: ${result.artifact!.name}`)
+        addToast(`Centroid created: ${result.artifact!.name}`, 'success')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Centroid failed: ${message}`)
+      addToast(`Centroid failed: ${message}`, 'error')
     } finally {
       setCentroidRunning(false)
       setCentroidName('')
@@ -1833,6 +1957,7 @@ function App() {
       if (result.error) {
         const refusal = getSingleInputOperationPresentation('convex-hull-v1')
         setStatusMessage(`${refusal?.refusalPrefix ?? 'Convex hull refused'}: ${result.error}`)
+        addToast(`${refusal?.refusalPrefix ?? 'Convex hull refused'}: ${result.error}`, 'error')
         return
       }
 
@@ -1844,10 +1969,12 @@ function App() {
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(`Convex hull created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Output is a single derived hull with no source attributes carried forward.`)
+        addToast(`Convex hull created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Output is a single derived hull with no source attributes carried forward.`, 'success')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Convex hull failed: ${message}`)
+      addToast(`Convex hull failed: ${message}`, 'error')
     } finally {
       setConvexHullRunning(false)
       setConvexHullName('')
@@ -1873,6 +2000,7 @@ function App() {
       if (result.error) {
         const refusal = getSingleInputOperationPresentation('envelope-v1')
         setStatusMessage(`${refusal?.refusalPrefix ?? 'Envelope refused'}: ${result.error}`)
+        addToast(`${refusal?.refusalPrefix ?? 'Envelope refused'}: ${result.error}`, 'error')
         return
       }
 
@@ -1884,10 +2012,12 @@ function App() {
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(`Envelope created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Output is one axis-aligned bounding box polygon with no source attributes carried forward.`)
+        addToast(`Envelope created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Output is one axis-aligned bounding box polygon with no source attributes carried forward.`, 'success')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Envelope failed: ${message}`)
+      addToast(`Envelope failed: ${message}`, 'error')
     } finally {
       setEnvelopeRunning(false)
       setEnvelopeName('')
@@ -1900,6 +2030,7 @@ function App() {
     const tolerance = parseFloat(simplifyTolerance)
     if (!Number.isFinite(tolerance) || tolerance < 0) {
       setStatusMessage('Simplify tolerance must be a non-negative number')
+      addToast('Simplify tolerance must be a non-negative number', 'warning')
       return
     }
 
@@ -1919,6 +2050,7 @@ function App() {
       if (result.error) {
         const refusal = getSingleInputOperationPresentation('simplify-v1')
         setStatusMessage(`${refusal?.refusalPrefix ?? 'Simplify refused'}: ${result.error}`)
+        addToast(`${refusal?.refusalPrefix ?? 'Simplify refused'}: ${result.error}`, 'error')
         return
       }
 
@@ -1930,10 +2062,12 @@ function App() {
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(`Simplify created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Tolerance ${tolerance} was interpreted in source CRS units, source attributes were preserved, and no topology-preservation claim is made on this v1 path.`)
+        addToast(`Simplify created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Tolerance ${tolerance} was interpreted in source CRS units, source attributes were preserved, and no topology-preservation claim is made on this v1 path.`, 'success')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Simplify failed: ${message}`)
+      addToast(`Simplify failed: ${message}`, 'error')
     } finally {
       setSimplifyRunning(false)
       setSimplifyName('')
@@ -1991,11 +2125,13 @@ function App() {
     // Validate source and target CRS
     if (!reprojectSourceCrs || !reprojectTargetCrs) {
       setStatusMessage('Please select both source and target CRS')
+      addToast('Please select both source and target CRS', 'warning')
       return
     }
 
     if (reprojectSourceCrs === reprojectTargetCrs) {
       setStatusMessage('Source and target CRS are the same. No coordinate transformation is needed; use Assign CRS when metadata-only assignment lands.')
+      addToast('Source and target CRS are the same. No coordinate transformation is needed; use Assign CRS when metadata-only assignment lands.', 'warning')
       return
     }
 
@@ -2003,6 +2139,7 @@ function App() {
     if (!validation.valid) {
       const errorMessages = validation.errors.map(e => e.message).join('; ')
       setStatusMessage(`Reproject refused: ${errorMessages}`)
+      addToast(`Reproject refused: ${errorMessages}`, 'error')
       setShowReprojectDialog(false)
       return
     }
@@ -2024,6 +2161,7 @@ function App() {
 
       if (result.error) {
         setStatusMessage(`Reproject failed: ${result.error}`)
+        addToast(`Reproject failed: ${result.error}`, 'error')
         return
       }
 
@@ -2043,10 +2181,12 @@ function App() {
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(`Reprojected: ${result.artifact!.name} (${reprojectSourceCrs} → ${reprojectTargetCrs})`)
+        addToast(`Reprojected: ${result.artifact!.name} (${reprojectSourceCrs} → ${reprojectTargetCrs})`, 'success')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Reproject failed: ${message}`)
+      addToast(`Reproject failed: ${message}`, 'error')
     } finally {
       setReprojectRunning(false)
       setReprojectName('')
@@ -2062,6 +2202,7 @@ function App() {
     // TODO: Implement actual CRS assignment - update metadata without coordinate transformation
     // This should: set artifact.crs, update crsProvenance with source: 'user-assigned', confidence: 'known'
     setStatusMessage(`Assign CRS is not yet implemented. Use Reproject to transform coordinates to a new CRS.`)
+    addToast(`Assign CRS is not yet implemented. Use Reproject to transform coordinates to a new CRS.`, 'warning')
   }
 
   // Open clip dialog with suggested name
@@ -2083,6 +2224,7 @@ function App() {
     const maskArtifact = artifacts.find(a => a.id === clipMaskArtifactId)
     if (!maskArtifact) {
       setStatusMessage(clipRoleContext.secondarySelectionPrompt)
+      addToast(clipRoleContext.secondarySelectionPrompt, 'warning')
       return
     }
 
@@ -2092,6 +2234,7 @@ function App() {
       // Construct detailed error message from validation errors
       const errorMessages = validation.errors.map(e => e.message).join('; ')
       setStatusMessage(`Clip refused: ${errorMessages}`)
+      addToast(`Clip refused: ${errorMessages}`, 'error')
       setShowClipDialog(false)
       return
     }
@@ -2112,6 +2255,7 @@ function App() {
 
       if (result.error) {
         setStatusMessage(`Clip failed: ${result.error}`)
+        addToast(`Clip failed: ${result.error}`, 'error')
         return
       }
 
@@ -2124,10 +2268,17 @@ function App() {
             ? `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlap was found, so the result artifact is intentionally empty.`
             : `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}.`
         )
+        addToast(
+          result.artifact!.rowCount === 0
+            ? `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlap was found, so the result artifact is intentionally empty.`
+            : `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}.`,
+          'success'
+        )
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Clip failed: ${message}`)
+      addToast(`Clip failed: ${message}`, 'error')
     } finally {
       setClipRunning(false)
       setClipName('')
@@ -2166,6 +2317,7 @@ function App() {
     const overlayArtifact = artifacts.find(a => a.id === overlayArtifactId)
     if (!overlayArtifact) {
       setStatusMessage(intersectRoleContext.secondarySelectionPrompt)
+      addToast(intersectRoleContext.secondarySelectionPrompt, 'warning')
       return
     }
 
@@ -2173,6 +2325,7 @@ function App() {
     if (!validation.valid) {
       const errorMessages = validation.errors.map(e => e.message).join('; ')
       setStatusMessage(`Intersect refused: ${errorMessages}`)
+      addToast(`Intersect refused: ${errorMessages}`, 'error')
       setShowIntersectDialog(false)
       return
     }
@@ -2191,6 +2344,7 @@ function App() {
 
       if (result.error) {
         setStatusMessage(`Intersect failed: ${result.error}`)
+        addToast(`Intersect failed: ${result.error}`, 'error')
         return
       }
 
@@ -2203,10 +2357,17 @@ function App() {
             ? `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlapping area was found, so the result artifact is intentionally empty.`
             : `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Source attributes were preserved; overlay attributes are not merged in v1.`
         )
+        addToast(
+          result.artifact!.rowCount === 0
+            ? `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlapping area was found, so the result artifact is intentionally empty.`
+            : `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Source attributes were preserved; overlay attributes are not merged in v1.`,
+          'success'
+        )
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Intersect failed: ${message}`)
+      addToast(`Intersect failed: ${message}`, 'error')
     } finally {
       setIntersectRunning(false)
       setIntersectName('')
@@ -2221,16 +2382,19 @@ function App() {
 
     if (!joinArtifact) {
       setStatusMessage('Please select a join artifact.')
+      addToast('Please select a join artifact.', 'warning')
       return
     }
 
     if (!attributeJoinSourceKey) {
       setStatusMessage(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: choose one left-side join key.`)
+      addToast(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: choose one left-side join key.`, 'error')
       return
     }
 
     if (!attributeJoinSecondaryKey) {
       setStatusMessage(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: choose one right-side join key.`)
+      addToast(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: choose one right-side join key.`, 'error')
       return
     }
 
@@ -2238,14 +2402,17 @@ function App() {
     const rightFields = getJoinableFieldNames(joinArtifact)
     if (!leftFields.includes(attributeJoinSourceKey)) {
       setStatusMessage(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: left-side join key "${attributeJoinSourceKey}" does not exist.`)
+      addToast(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: left-side join key "${attributeJoinSourceKey}" does not exist.`, 'error')
       return
     }
     if (!rightFields.includes(attributeJoinSecondaryKey)) {
       setStatusMessage(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: right-side join key "${attributeJoinSecondaryKey}" does not exist.`)
+      addToast(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: right-side join key "${attributeJoinSecondaryKey}" does not exist.`, 'error')
       return
     }
     if (attributeJoinSelectedFields.length === 0) {
       setStatusMessage(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: select at least one explicit right-side field.`)
+      addToast(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: select at least one explicit right-side field.`, 'error')
       return
     }
 
@@ -2269,6 +2436,7 @@ function App() {
 
       if (result.error) {
         setStatusMessage(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: ${result.error}`)
+        addToast(`${presentation?.refusalPrefix ?? 'Attribute join refused'}: ${result.error}`, 'error')
         return
       }
 
@@ -2280,6 +2448,7 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Attribute join failed: ${message}`)
+      addToast(`Attribute join failed: ${message}`, 'error')
     } finally {
       setAttributeJoinRunning(false)
       setAttributeJoinName('')
@@ -2350,6 +2519,7 @@ function App() {
     }
     if (options?.statusMessage) {
       setStatusMessage(options.statusMessage)
+      if (options?.statusMessage) addToast(options.statusMessage, 'success')
     }
   }
 
@@ -2383,6 +2553,7 @@ function App() {
           console.log('[App][grouped-dissolve] result error', { error: result.error })
         }
         setStatusMessage(`Grouped dissolve failed: ${result.error}`)
+        addToast(`Grouped dissolve failed: ${result.error}`, 'error')
         return
       }
 
@@ -2426,6 +2597,7 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`Grouped dissolve failed: ${message}`)
+      addToast(`Grouped dissolve failed: ${message}`, 'error')
     } finally {
       setDissolveRunning(false)
       setDissolveName('')
@@ -2455,6 +2627,7 @@ function App() {
 
       if (result.error) {
         setStatusMessage(`${presentation?.refusalPrefix ?? 'Measurement refused'}: ${result.error}`)
+        addToast(`${presentation?.refusalPrefix ?? 'Measurement refused'}: ${result.error}`, 'error')
         return
       }
 
@@ -2467,6 +2640,7 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       setStatusMessage(`${presentation?.title ?? 'Measurement'} failed: ${message}`)
+      addToast(`${presentation?.title ?? 'Measurement'} failed: ${message}`, 'error')
     } finally {
       setRunning(false)
       clearName()
@@ -2564,177 +2738,245 @@ function App() {
           <button className="secondary" onClick={handleNewProject}>New</button>
           <button className="secondary" onClick={() => setShowSaveDialog(true)}>Save Project</button>
           <button className="secondary" onClick={handleOpenProject}>Open Project</button>
-          <span style={{ width: 1, background: '#e2e8f0', margin: '0 4px' }} />
-          <button className="secondary" onClick={openSampleImport}>Load sample</button>
-          <label className="secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            Import
-            <input className="input-file" type="file" accept=".json,.geojson,.parquet,.geoparquet" onChange={handleFileImport} style={{ display: 'none' }} />
-          </label>
-          {selectedArtifact && selectedArtifactExportOptions.length > 0 && (
-            <div style={{ position: 'relative' }}>
-              <button className="secondary" onClick={() => setShowExportMenu(!showExportMenu)}>
-                Export ▾
-              </button>
-              {showExportMenu && (
-                <div className="card" style={{ position: 'absolute', right: 0, top: '100%', zIndex: 100, minWidth: 260, marginTop: 4 }}>
-                  {selectedArtifactExportOptions.map((option) => (
-                    <button
-                      key={option.kind}
-                      className="card"
-                      style={{ width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}
-                      onClick={option.kind === 'geojson' ? handleExportGeoJson : handleExportJson}
-                    >
-                      <div><strong>{option.label}</strong></div>
-                      <div className="small muted" style={{ marginTop: 4 }}>{option.description}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {selectedArtifact && selectedArtifact.spatial && spatialEngineInitialized && (
-            <>
-              <button className="secondary" onClick={openBufferDialog}>
-                Buffer
-              </button>
-              <button className="secondary" onClick={openCentroidDialog}>
-                Centroid
-              </button>
-              <button className="secondary" onClick={openConvexHullDialog}>
-                Convex Hull
-              </button>
-              <button className="secondary" onClick={openEnvelopeDialog}>
-                Envelope
-              </button>
-              <button className="secondary" onClick={openSimplifyDialog}>
-                Simplify
-              </button>
-              <button className="secondary" onClick={openDissolveDialog}>
-                Grouped Dissolve
-              </button>
-              <button className="secondary" onClick={openAreaDialog}>
-                Area
-              </button>
-              <button className="secondary" onClick={openPerimeterDialog}>
-                Perimeter
-              </button>
-              <button className="secondary" onClick={openCompactnessDialog}>
-                Compactness
-              </button>
-              <button className="secondary" onClick={openReprojectDialog}>
-                Reproject
-              </button>
-              <button className="secondary" onClick={openClipDialog}>
-                Clip
-              </button>
-              <button className="secondary" onClick={openIntersectDialog}>
-                Intersect
-              </button>
-              <button className="secondary" onClick={openAttributeJoinDialog}>
-                Attribute Join
-              </button>
-            </>
-          )}
+          <button
+            className="secondary"
+            title="Settings"
+            onClick={() => addToast('Settings panel coming in a later slice.', 'info')}
+          >
+            ⚙
+          </button>
         </div>
       </header>
 
-      <aside className="left-rail">
-        <h2 className="panel-title">Project / Data</h2>
-        <div className="card">
-          <div className="row">
-            <div>
-              <strong>{projectName}</strong>
-              <div className="muted small">{statusMessage}</div>
-            </div>
-            <span className="badge">{formatCount(artifacts.length, 'artifact')}</span>
-          </div>
-        </div>
+      {/* Sidebar icon rail */}
+      <nav className="sidebar-rail">
+        <button
+          className={`sidebar-rail-btn ${activeSidebar === 'layers' ? 'active' : ''}`}
+          title="Layers"
+          onClick={() => toggleSidebar('layers')}
+        >
+          🗺️
+        </button>
+        <button
+          className={`sidebar-rail-btn ${activeSidebar === 'discover' ? 'active' : ''}`}
+          title="Discover"
+          onClick={() => toggleSidebar('discover')}
+        >
+          🔍
+        </button>
+        <button
+          className="sidebar-rail-btn"
+          title="Import"
+          onClick={() => importFileRef.current?.click()}
+        >
+          ➕
+        </button>
+        <button
+          className={`sidebar-rail-btn ${activeSidebar === 'query' ? 'active' : ''}`}
+          title="Query"
+          onClick={() => toggleSidebar('query')}
+        >
+          💬
+        </button>
+        <button
+          className={`sidebar-rail-btn ${rightPanelOpen ? 'active' : ''}`}
+          title="History"
+          onClick={() => setRightPanelOpen(prev => !prev)}
+        >
+          ⌛
+        </button>
+        <input
+          ref={importFileRef}
+          className="input-file"
+          type="file"
+          accept=".json,.geojson,.parquet,.geoparquet"
+          onChange={handleFileImport}
+          style={{ display: 'none' }}
+        />
+      </nav>
 
-        <h3 className="panel-title" style={{ marginTop: 16 }}>Artifacts</h3>
-        <div className="artifact-list">
-          {artifacts.length === 0 && <div className="card muted">No project artifacts yet. Import data to begin.</div>}
-          {artifacts.map((artifact) => (
-            <button
-              key={artifact.id}
-              className={`card ${selectedArtifactId === artifact.id ? 'selected' : ''}`}
-              style={{ textAlign: 'left' }}
-              onClick={() => setSelectedArtifactId(artifact.id)}
-            >
-              <div className="row">
-                <strong>{artifact.name}</strong>
-                <span className={`badge ${artifact.kind}`}>{artifact.kind}</span>
+      {/* Sidebar drawer */}
+      {activeSidebar && (
+        <aside className="sidebar-drawer">
+          {activeSidebar === 'layers' && (
+            <>
+              <h2 className="panel-title">Project / Data</h2>
+              <div className="card">
+                <div className="row">
+                  <div>
+                    <strong>{projectName}</strong>
+                    <div className="muted small">{statusMessage}</div>
+                  </div>
+                  <span className="badge">{formatCount(artifacts.length, 'artifact')}</span>
+                </div>
               </div>
-              <div className="small muted" style={{ marginTop: 8 }}>
-                {artifact.format} · {artifact.rowCount ?? '?'} rows · {getArtifactGeometryLabel(artifact)}
-              </div>
-              <div className="row" style={{ marginTop: 8, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-                <span className="badge">CRS: {artifact.crs ?? 'unknown'}</span>
-                {artifact.crsProvenance && (
-                  <span className={`badge ${artifact.crsProvenance.confidence}`}>
-                    {artifact.crsProvenance.confidence.toUpperCase()}
-                  </span>
-                )}
-                {getDisplayCrsIfNeeded(artifact) && (
-                  <span className="badge" style={{ background: '#3f2a11', color: '#fbbf24' }}>
-                    ↻ display only
-                  </span>
-                )}
-                {getActiveWarnings(artifact.warnings).length > 0 && (
-                  <span className="badge warning">{formatCount(getActiveWarnings(artifact.warnings).length, 'warning')}</span>
-                )}
-                {getCurrentNotes(artifact.warnings).length > 0 && (
-                  <span className="badge info">{formatCount(getCurrentNotes(artifact.warnings).length, 'note')}</span>
-                )}
-                {getProvenanceNotes(artifact.warnings).length > 0 && (
-                  <span className="badge historical">{formatCount(getProvenanceNotes(artifact.warnings).length, 'provenance note')}</span>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
 
-        <h3 className="panel-title" style={{ marginTop: 16 }}>Saved Queries</h3>
-        <div className="artifact-list">
-          {savedQueries.length === 0 && <div className="card muted">No saved queries yet.</div>}
-          {savedQueries.map((query) => (
-            <div
-              key={query.id}
-              className="card"
-              style={{ textAlign: 'left' }}
-              onClick={() => handleLoadQuery(query)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleLoadQuery(query) }}
-            >
-              <div className="row">
-                <strong>{query.name}</strong>
-                <button 
-                  className="secondary" 
-                  style={{ padding: '2px 6px', fontSize: 11 }}
-                  onClick={(e) => { e.stopPropagation(); handleDeleteQuery(query.id) }}
-                >
-                  ×
-                </button>
+              <h3 className="panel-title" style={{ marginTop: 16 }}>Artifacts</h3>
+              <div className="artifact-list">
+                {artifacts.length === 0 && <div className="card muted">No project artifacts yet. Import data to begin.</div>}
+                {artifacts.map((artifact) => (
+                  <button
+                    key={artifact.id}
+                    className={`card ${selectedArtifactId === artifact.id ? 'selected' : ''} ${artifact.kind === 'derived' ? 'card-derived' : ''}`}
+                    style={{ textAlign: 'left', padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-1)' }}
+                    onClick={() => { setSelectedArtifactId(artifact.id); setRightPanelOpen(true) }}
+                  >
+                    <div style={{ fontWeight: 'var(--weight-semibold)', fontSize: 'var(--text-sm)' }}>
+                      {artifact.name}
+                    </div>
+                    <div className="small muted" style={{ marginTop: 'var(--space-1)' }}>
+                      {artifact.format} · {(artifact.rowCount ?? 0).toLocaleString()} rows · {artifact.geometryType ?? getArtifactOutputKindLabel(getArtifactOutputKind(artifact))}
+                    </div>
+                    <div className="small" style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        {artifact.geometryType === 'Point' ? '◉' : artifact.geometryType === 'LineString' ? '╱' : '▭'} {artifact.geometryType ?? '—'}
+                      </span>
+                      {artifact.warnings && artifact.warnings.length > 0 && (
+                        <span style={{ color: '#d29922' }}>⚠ {artifact.warnings.length}</span>
+                      )}
+                      {artifact.crs && (
+                        <span style={{ color: 'var(--text-muted)' }}>{artifact.crs}</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
               </div>
-              <div className="small muted" style={{ marginTop: 4 }}>
-                {query.sql.substring(0, 50)}{query.sql.length > 50 ? '...' : ''}
+
+              <h3 className="panel-title" style={{ marginTop: 16 }}>Saved Queries</h3>
+              <div className="artifact-list">
+                {savedQueries.length === 0 && <div className="card muted">No saved queries yet.</div>}
+                {savedQueries.map((query) => (
+                  <div
+                    key={query.id}
+                    className="card"
+                    style={{ textAlign: 'left' }}
+                    onClick={() => handleLoadQuery(query)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleLoadQuery(query) }}
+                  >
+                    <div className="row">
+                      <strong>{query.name}</strong>
+                      <button
+                        className="secondary"
+                        style={{ padding: '2px 6px', fontSize: 11 }}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteQuery(query.id) }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="small muted" style={{ marginTop: 4 }}>
+                      {query.sql.substring(0, 50)}{query.sql.length > 50 ? '...' : ''}
+                    </div>
+                  </div>
+                ))}
+                {savedQueries.length > 0 && (
+                  <div
+                    className="card"
+                    style={{ textAlign: 'left', border: '1px dashed #94a3b8', cursor: 'pointer' }}
+                    onClick={() => setShowSaveQueryDialog(true)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowSaveQueryDialog(true) }}
+                  >
+                    <div className="muted small">+ Save current query</div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
-          {savedQueries.length > 0 && (
-            <div 
-              className="card" 
-              style={{ textAlign: 'left', border: '1px dashed #94a3b8', cursor: 'pointer' }}
-              onClick={() => setShowSaveQueryDialog(true)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowSaveQueryDialog(true) }}
-            >
-              <div className="muted small">+ Save current query</div>
-            </div>
+            </>
           )}
-        </div>
-      </aside>
+
+          {activeSidebar === 'discover' && (
+            <DiscoveryPanel
+              onImport={() => addToast('Discovery import wired — implementation in Slice 3.', 'info')}
+              onBboxPreview={() => {}}
+            />
+          )}
+
+          {activeSidebar === 'query' && (
+            <>
+              <h2 className="panel-title">SQL Query</h2>
+              <div className="card" style={{ marginBottom: 12 }}>
+                <div className="row">
+                  <strong>Queryable tables</strong>
+                  <span className="badge">{artifacts.filter((artifact) => artifact.tableName).length}</span>
+                </div>
+                <div className="small muted" style={{ marginTop: 8 }}>
+                  {artifacts.filter((artifact) => artifact.tableName).length === 0
+                    ? 'No registered tables yet.'
+                    : artifacts
+                        .filter((artifact) => artifact.tableName)
+                        .map((artifact) => `${artifact.tableName} (${artifact.kind})`)
+                        .join(', ')}
+                </div>
+              </div>
+              <textarea className="sql-editor" value={sql} onChange={(event) => setSql(event.target.value)} />
+              {queryError && (
+                <div className="card danger" style={{ marginTop: 12 }}>
+                  <strong>Query failed</strong>
+                  <div className="small muted" style={{ marginTop: 6 }}>{queryError}</div>
+                  <div className="small" style={{ marginTop: 6 }}>Recovery: verify table names, SQL syntax, and that the referenced artifact tables are registered in the workspace.</div>
+                </div>
+              )}
+              <div className="actions">
+                <button className="primary" onClick={runQuery} disabled={queryRunning}>{queryRunning ? 'Running…' : 'Run query'}</button>
+                <button className="secondary" onClick={() => setShowSaveQueryDialog(true)}>Save Query</button>
+                <button className="secondary" onClick={() => setSql(SAMPLE_SQL)}>Reset sample SQL</button>
+              </div>
+
+              <h3 className="panel-title" style={{ marginTop: 16 }}>Saved Queries</h3>
+              <div className="artifact-list">
+                {savedQueries.length === 0 && <div className="card muted">No saved queries yet.</div>}
+                {savedQueries.map((query) => (
+                  <div
+                    key={query.id}
+                    className="card"
+                    style={{ textAlign: 'left' }}
+                    onClick={() => handleLoadQuery(query)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleLoadQuery(query) }}
+                  >
+                    <div className="row">
+                      <strong>{query.name}</strong>
+                      <button
+                        className="secondary"
+                        style={{ padding: '2px 6px', fontSize: 11 }}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteQuery(query.id) }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="small muted" style={{ marginTop: 4 }}>
+                      {query.sql.substring(0, 50)}{query.sql.length > 50 ? '...' : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {activeSidebar === 'chain' && (
+            <>
+              <h2 className="panel-title">Plan</h2>
+              <NLQueryPanel
+                artifacts={artifacts}
+                addArtifact={(artifact) => setArtifacts(prev => [...prev, artifact])}
+                onPlanExecuted={(result) => {
+                  if (result.success) {
+                    setHistory(prev => [...prev, ...result.historyEvents])
+                    addToast(`Executed plan: ${result.artifacts.length} artifact(s) created`, 'success')
+                    if (result.artifacts[0]) setSelectedArtifactId(result.artifacts[0].id)
+                  } else {
+                    addToast(`Plan failed: ${result.errors.join(', ')}`, 'error')
+                  }
+                }}
+                externalQuery={commandInput}
+              />
+            </>
+          )}
+        </aside>
+      )}
 
       <main className="main-pane">
         <div ref={mapNodeRef} className="map-container" />
@@ -4229,69 +4471,35 @@ function App() {
         })()}
       </main>
 
-      <aside className="right-panel">
-        <h2 className="panel-title">Details / History</h2>
-        {!selectedArtifact && <div className="card muted">Select an artifact to inspect its lineage and metadata.</div>}
+      <aside className={`right-panel ${rightPanelOpen ? 'open' : ''}`}>
+        <div className="row" style={{ marginBottom: 12 }}>
+          <h2 className="panel-title" style={{ margin: 0 }}>Details / History</h2>
+          <button
+            className="secondary"
+            style={{ padding: '2px 8px', fontSize: 12 }}
+            onClick={() => setRightPanelOpen(false)}
+          >
+            ×
+          </button>
+        </div>
+        {!selectedArtifact && (
+          <AccordionSection title="Project Summary" defaultOpen={true} badge={formatCount(artifacts.length, 'artifact')}>
+            <div className="small muted" style={{ marginBottom: 8 }}>{statusMessage}</div>
+            <div className="actions" style={{ marginTop: 0, gap: 8 }}>
+              <label className="secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                Import data
+                <input className="input-file" type="file" accept=".json,.geojson,.parquet,.geoparquet" onChange={handleFileImport} style={{ display: 'none' }} />
+              </label>
+              <button className="secondary" onClick={openSampleImport}>Load sample</button>
+            </div>
+          </AccordionSection>
+        )}
         {selectedArtifact && (
           <>
-            <div className="card">
-              <div className="row">
-                <strong>{selectedArtifact.name}</strong>
-                <span className={`badge ${selectedArtifact.kind}`}>{selectedArtifact.kind}</span>
-              </div>
-              <div className="small muted" style={{ marginTop: 8 }}>{selectedArtifact.format}</div>
-              <div className="small muted" style={{ marginTop: 4 }}>
-                {selectedArtifact.rowCount ?? '?'} rows · {getArtifactGeometryLabel(selectedArtifact)}
-              </div>
-              <div className="small" style={{ marginTop: 6, color: '#cbd5e1' }}>
-                Output kind: <strong>{selectedArtifactOutputKind ? getArtifactOutputKindLabel(selectedArtifactOutputKind) : 'unknown output'}</strong>
-              </div>
-              {/* Compact CRS metadata block - keep stored CRS, confidence, provenance, and display CRS distinct */}
-              <div className="small" style={{ marginTop: 8, padding: '8px 10px', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ color: '#94a3b8' }}>Stored CRS:</span>
-                  <strong>{selectedArtifact.crs ?? 'unknown'}</strong>
-                  {selectedArtifact.crsProvenance && (
-                    <span className={`badge ${selectedArtifact.crsProvenance.confidence}`}>
-                      {getCrsConfidenceLabel(selectedArtifact.crsProvenance.confidence)}
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                  <span style={{ color: '#94a3b8' }}>CRS provenance:</span>
-                  <span style={{ color: '#cbd5e1' }}>{selectedArtifact.crsProvenance ? getCrsProvenanceLabel(selectedArtifact.crsProvenance.source) : 'unknown'}</span>
-                </div>
-                {/* Show display CRS info when display normalization is applied */}
-                {getDisplayCrsIfNeeded(selectedArtifact) && (() => {
-                  const displayMeta = selectedArtifactDisplayStatus ? getDisplayStatusMeta(selectedArtifactDisplayStatus) : null
-                  return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, color: '#fbbf24', fontSize: '11px', flexWrap: 'wrap' }}>
-                      <span>↻</span>
-                      <span>
-                        Display CRS: {getDisplayCrsIfNeeded(selectedArtifact)} (map only)
-                      </span>
-                      <span style={{ color: '#64748b' }}>·</span>
-                      <span>
-                        {displayMeta?.message ?? 'Display normalization changes map rendering only. Stored CRS metadata is unchanged.'}
-                      </span>
-                    </div>
-                  )
-                })()}
-              </div>
-              {selectedArtifact.renderIssue && (
-                <div className="card danger" style={{ marginTop: 10 }}>
-                  <strong>Render issue</strong>
-                  <div className="small muted" style={{ marginTop: 6 }}>{selectedArtifact.renderIssue}</div>
-                  <div className="small" style={{ marginTop: 6 }}>The artifact still exists and remains queryable/tabular. Only the current map adaptation failed.</div>
-                </div>
-              )}
-              {/* Show focused feature details when a row/feature is selected */}
-              {selectedRowIndex !== null && selectedArtifact.spatial && isFeatureCollection(selectedArtifact.data) && (
-                <div className="card" style={{ marginTop: 12, background: '#0f172a', border: '1px solid #1e3a5f' }}>
-                  <div className="row">
-                    <strong style={{ color: '#93c5fd' }}>Focused feature</strong>
-                    <span className="badge">#{selectedRowIndex + 1}</span>
-                  </div>
+            {/* Focused Feature accordion — shown at top when a feature is selected */}
+            {selectedRowIndex !== null && selectedArtifact.spatial && isFeatureCollection(selectedArtifact.data) && (
+              <AccordionSection title="Focused Feature" defaultOpen={true} badge={`#${selectedRowIndex + 1}`}>
+                <div className="card" style={{ background: '#0f172a', border: '1px solid #1e3a5f' }}>
                   {selectedFeatureGeometry && (
                     <div className="small muted" style={{ marginTop: 6 }}>
                       Geometry: {selectedFeatureGeometry.type}
@@ -4315,226 +4523,87 @@ function App() {
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-            <div className="card" style={{ marginTop: 12 }}>
-              <div className="row">
-                <strong>Lineage</strong>
-                <span className="badge">{selectedArtifact.kind}</span>
+              </AccordionSection>
+            )}
+
+            {/* Overview accordion */}
+            <AccordionSection title="Overview" defaultOpen={selectedRowIndex === null}>
+              <div className="card">
+                <div className="row">
+                  <strong>{selectedArtifact.name}</strong>
+                  <span className={`badge ${selectedArtifact.kind}`}>{selectedArtifact.kind}</span>
+                </div>
+                <div className="small muted" style={{ marginTop: 8 }}>{selectedArtifact.format}</div>
+    <div className="small muted" style={{ marginTop: 4 }}>
+                  {selectedArtifact.rowCount ?? '?'} rows · {getArtifactGeometryLabel(selectedArtifact)}
+                </div>
+                <div className="small" style={{ marginTop: 6, color: '#cbd5e1' }}>
+                  Output kind: <strong>{selectedArtifactOutputKind ? getArtifactOutputKindLabel(selectedArtifactOutputKind) : 'unknown output'}</strong>
+                </div>
+                {/* Compact CRS metadata block - keep stored CRS, confidence, provenance, and display CRS distinct */}
+                <div className="small" style={{ marginTop: 8, padding: '8px 10px', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ color: '#94a3b8' }}>Stored CRS:</span>
+                    <strong>{selectedArtifact.crs ?? 'unknown'}</strong>
+                    {selectedArtifact.crsProvenance && (
+                      <span className={`badge ${selectedArtifact.crsProvenance.confidence}`}>
+                        {getCrsConfidenceLabel(selectedArtifact.crsProvenance.confidence)}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                    <span style={{ color: '#94a3b8' }}>CRS provenance:</span>
+                    <span style={{ color: '#cbd5e1' }}>{selectedArtifact.crsProvenance ? getCrsProvenanceLabel(selectedArtifact.crsProvenance.source) : 'unknown'}</span>
+                  </div>
+                  {/* Show display CRS info when display normalization is applied */}
+                  {getDisplayCrsIfNeeded(selectedArtifact) && (() => {
+                    const displayMeta = selectedArtifactDisplayStatus ? getDisplayStatusMeta(selectedArtifactDisplayStatus) : null
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, color: '#fbbf24', fontSize: '11px', flexWrap: 'wrap' }}>
+                        <span>↻</span>
+                        <span>
+                          Display CRS: {getDisplayCrsIfNeeded(selectedArtifact)} (map only)
+                        </span>
+                        <span style={{ color: '#64748b' }}>·</span>
+                        <span>
+                          {displayMeta?.message ?? 'Display normalization changes map rendering only. Stored CRS metadata is unchanged.'}
+                        </span>
+                      </div>
+                    )
+                  })()}
+                </div>
+                {selectedArtifact.renderIssue && (
+                  <div className="card danger" style={{ marginTop: 10 }}>
+                    <strong>Render issue</strong>
+                    <div className="small muted" style={{ marginTop: 6 }}>{selectedArtifact.renderIssue}</div>
+                    <div className="small" style={{ marginTop: 6 }}>The artifact still exists and remains queryable/tabular. Only the current map adaptation failed.</div>
+                  </div>
+                )}
               </div>
-              {selectedArtifact.kind === 'source' ? (
-                <>
-                  <div className="small" style={{ marginTop: 8 }}>Imported into the workspace as a source artifact.</div>
-                  {selectedArtifactOriginEvent && (
-                    <div className="small muted" style={{ marginTop: 6 }}>
-                      Created by: import event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}
-                    </div>
+            </AccordionSection>
+
+            {/* Issues accordion — combines Notes, Provenance notes, Display runtime, and Warnings */}
+            {(() => {
+              const hasBlockingWarnings = selectedArtifact.warnings.some(isWarning) && getActiveWarnings(selectedArtifact.warnings).length > 0
+              const noteCount = getCurrentNotes(selectedArtifact.warnings).length
+              const provNoteCount = getProvenanceNotes(selectedArtifact.warnings).length
+              const warningCount = getActiveWarnings(selectedArtifact.warnings).length
+              const displayWarning = selectedArtifactDisplayStatus && getDisplayStatusMeta(selectedArtifactDisplayStatus)?.warning
+              const badgeParts: string[] = []
+              if (warningCount > 0) badgeParts.push(formatCount(warningCount, 'warning'))
+              if (noteCount > 0) badgeParts.push(formatCount(noteCount, 'note'))
+              const hasAnyIssues = noteCount > 0 || provNoteCount > 0 || displayWarning || selectedArtifact.warnings.some(isWarning)
+              return (
+                <AccordionSection title="Issues" defaultOpen={hasBlockingWarnings} badge={badgeParts.join(', ') || undefined}>
+                  {!hasAnyIssues && (
+                    <div className="card muted">No issues detected.</div>
                   )}
-                </>
-              ) : (
-                <>
-                  <div className="small" style={{ marginTop: 8 }}>
-                    Upstream artifact(s): {selectedArtifact.inputArtifactIds?.map((id) => artifacts.find((a) => a.id === id)?.name ?? id).join(', ') || 'unknown upstream artifact'}
-                  </div>
-                  {selectedArtifactOriginEvent && (
-                    <>
-                      <div className="small muted" style={{ marginTop: 6 }}>Created by: {selectedArtifactOriginEvent.type} event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}</div>
-                      <div className="small" style={{ marginTop: 8, color: '#cbd5e1' }}>
-                        This artifact's stored truth comes from the output of that event. Input assumptions and provenance notes remain inspectable in the event details below.
-                      </div>
-                      {getHistoryDetailGroups(selectedArtifactOriginEvent.details).length > 0 && (
-                        <div className="card" style={{ marginTop: 10 }}>
-                          <strong className="small">Event-derived lineage facts</strong>
-                          <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
-                            {getHistoryDetailGroups(selectedArtifactOriginEvent.details).map((group) => (
-                              <div key={group.title}>
-                                <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
-                                <div style={{ display: 'grid', gap: 6 }}>
-                                  {group.rows.map(({ key, label, renderedValue }) => (
-                                    <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 8 }}>
-                                      <span style={{ color: '#94a3b8' }}>{label}</span>
-                                      <span>{renderedValue}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {'sql' in selectedArtifactOriginEvent.details && typeof selectedArtifactOriginEvent.details.sql === 'string' && (
-                        <pre className="card code-block">
-{String(selectedArtifactOriginEvent.details.sql)}
-                        </pre>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-            {/* Current notes */}
-            {getCurrentNotes(selectedArtifact.warnings).length > 0 && (
-              <>
-                <h3 className="panel-title" style={{ marginTop: 16, color: '#93c5fd' }}>Notes</h3>
-                <div className="artifact-list">
-                  {getCurrentNotes(selectedArtifact.warnings).map((warning) => (
-                    <div key={warning.id} className="card" style={{ borderColor: '#1e3a5f', background: '#0a1525' }}>
-                      <div className="row">
-                        <strong>{warning.title}</strong>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <span className="badge info">{getSeverityLabel(warning)}</span>
-                          <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                        </div>
-                      </div>
-                      <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                      <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-            {/* Provenance notes */}
-            {getProvenanceNotes(selectedArtifact.warnings).length > 0 && (
-              <>
-                <h3 className="panel-title" style={{ marginTop: 16, color: '#cbd5e1' }}>Provenance notes</h3>
-                <div className="artifact-list">
-                  {getProvenanceNotes(selectedArtifact.warnings).map((warning) => (
-                    <div key={warning.id} className="card" style={{ borderColor: '#334155', background: '#111827' }}>
-                      <div className="row">
-                        <strong>{warning.title}</strong>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <span className="badge info">{getSeverityLabel(warning)}</span>
-                          <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                        </div>
-                      </div>
-                      <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                      <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-            {/* Warnings section - for caution/serious/blocking only */}
-            {selectedArtifactDisplayStatus && getDisplayStatusMeta(selectedArtifactDisplayStatus)?.warning && (
-              <>
-                <h3 className="panel-title" style={{ marginTop: 16 }}>Display runtime</h3>
-                <div className="artifact-list">
-                  <div className="card">
-                    <div className="row">
-                      <strong>{getDisplayStatusMeta(selectedArtifactDisplayStatus)?.warning?.title}</strong>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <span className="badge caution">caution</span>
-                        <span className="badge active">active</span>
-                      </div>
-                    </div>
-                    <div className="small muted" style={{ marginTop: 6 }}>{getDisplayStatusMeta(selectedArtifactDisplayStatus)?.warning?.message}</div>
-                    <div className="small" style={{ marginTop: 6 }}>This reflects the current map-framing runtime, not a persisted change to the artifact itself.</div>
-                  </div>
-                </div>
-              </>
-            )}
-            {selectedArtifact.warnings.some(isWarning) && (
-              <>
-                <h3 className="panel-title" style={{ marginTop: 16 }}>Warnings</h3>
-                <div className="artifact-list">
-                  {selectedArtifact.warnings.filter(isWarning).map((warning) => (
-                    <div key={warning.id} className="card">
-                      <div className="row">
-                        <strong>{warning.title}</strong>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <span className={`badge ${warning.severity}`}>{getSeverityLabel(warning)}</span>
-                          <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                        </div>
-                      </div>
-                      <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                      <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-            {selectedArtifact.warnings.length === 0 && (
-              <>
-                <h3 className="panel-title" style={{ marginTop: 16 }}>Warnings</h3>
-                <div className="artifact-list">
-                  <div className="card muted">No active warnings.</div>
-                </div>
-              </>
-            )}
-          </>
-        )}
-        <h3 className="panel-title" style={{ marginTop: 16 }}>History</h3>
-        <div className="history-list">
-          {history.length === 0 && <div className="card muted">No project history yet.</div>}
-          {history.map((event) => (
-            <button
-              key={event.id}
-              className={`card ${selectedHistoryEventId === event.id ? 'selected' : ''}`}
-              style={{ textAlign: 'left' }}
-              onClick={() => setSelectedHistoryEventId(event.id)}
-            >
-              <div className="row"><strong>{event.summary}</strong><span className="badge">{event.type}</span></div>
-              <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(event.timestamp)}</div>
-              <div className="row" style={{ marginTop: 6, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                {getActiveWarnings(event.warnings).length > 0 && (
-                  <span className="badge warning">{formatCount(getActiveWarnings(event.warnings).length, 'warning')}</span>
-                )}
-                {getCurrentNotes(event.warnings).length > 0 && (
-                  <span className="badge info">{formatCount(getCurrentNotes(event.warnings).length, 'note')}</span>
-                )}
-                {getProvenanceNotes(event.warnings).length > 0 && (
-                  <span className="badge historical">{formatCount(getProvenanceNotes(event.warnings).length, 'provenance note')}</span>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-        {selectedHistoryEvent && (
-          <>
-            <h3 className="panel-title" style={{ marginTop: 16 }}>Event detail</h3>
-            <div className="card">
-              <div className="row">
-                <strong>{selectedHistoryEvent.summary}</strong>
-                <span className="badge">{selectedHistoryEvent.type}</span>
-              </div>
-              <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(selectedHistoryEvent.timestamp)}</div>
-              <div className="small" style={{ marginTop: 10 }}>
-                Inputs: {selectedHistoryEvent.inputArtifactIds.length
-                  ? selectedHistoryEvent.inputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
-                  : 'none'}
-              </div>
-              <div className="small" style={{ marginTop: 6 }}>
-                Outputs: {selectedHistoryEvent.outputArtifactIds.length
-                  ? selectedHistoryEvent.outputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
-                  : 'none'}
-              </div>
-              {getHistoryDetailGroups(selectedHistoryEvent.details).length > 0 && (
-                <div className="card" style={{ marginTop: 12 }}>
-                  <strong className="small">Structured event details</strong>
-                  <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
-                    {getHistoryDetailGroups(selectedHistoryEvent.details).map((group) => (
-                      <div key={group.title}>
-                        <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          {group.rows.map(({ key, label, renderedValue }) => (
-                            <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8 }}>
-                              <span style={{ color: '#94a3b8' }}>{label}</span>
-                              <span>{renderedValue}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {selectedHistoryEvent.warnings.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  {getCurrentNotes(selectedHistoryEvent.warnings).length > 0 && (
-                    <>
-                      <strong style={{ color: '#93c5fd' }}>Event notes</strong>
-                      <div className="artifact-list" style={{ marginTop: 8 }}>
-                        {getCurrentNotes(selectedHistoryEvent.warnings).map((warning) => (
+                  {/* Current notes */}
+                  {noteCount > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div className="small" style={{ color: '#93c5fd', marginBottom: 8 }}>Notes</div>
+                      <div className="artifact-list">
+                        {getCurrentNotes(selectedArtifact.warnings).map((warning) => (
                           <div key={warning.id} className="card" style={{ borderColor: '#1e3a5f', background: '#0a1525' }}>
                             <div className="row">
                               <strong>{warning.title}</strong>
@@ -4548,14 +4617,15 @@ function App() {
                           </div>
                         ))}
                       </div>
-                    </>
+                    </div>
                   )}
-                  {getProvenanceNotes(selectedHistoryEvent.warnings).length > 0 && (
-                    <>
-                      <strong>Event provenance</strong>
-                      <div className="artifact-list" style={{ marginTop: 8 }}>
-                        {getProvenanceNotes(selectedHistoryEvent.warnings).map((warning) => (
-                          <div key={warning.id} className="card">
+                  {/* Provenance notes */}
+                  {provNoteCount > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div className="small" style={{ color: '#cbd5e1', marginBottom: 8 }}>Provenance notes</div>
+                      <div className="artifact-list">
+                        {getProvenanceNotes(selectedArtifact.warnings).map((warning) => (
+                          <div key={warning.id} className="card" style={{ borderColor: '#334155', background: '#111827' }}>
                             <div className="row">
                               <strong>{warning.title}</strong>
                               <div style={{ display: 'flex', gap: 6 }}>
@@ -4568,13 +4638,33 @@ function App() {
                           </div>
                         ))}
                       </div>
-                    </>
+                    </div>
                   )}
-                  {getActiveWarnings(selectedHistoryEvent.warnings).length > 0 && (
-                    <>
-                      <strong>Event warnings</strong>
-                      <div className="artifact-list" style={{ marginTop: 8 }}>
-                        {getActiveWarnings(selectedHistoryEvent.warnings).map((warning) => (
+                  {/* Display runtime warning */}
+                  {displayWarning && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div className="small" style={{ marginBottom: 8 }}>Display runtime</div>
+                      <div className="artifact-list">
+                        <div className="card">
+                          <div className="row">
+                            <strong>{displayWarning.title}</strong>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <span className="badge caution">caution</span>
+                              <span className="badge active">active</span>
+                            </div>
+                          </div>
+                          <div className="small muted" style={{ marginTop: 6 }}>{displayWarning.message}</div>
+                          <div className="small" style={{ marginTop: 6 }}>This reflects the current map-framing runtime, not a persisted change to the artifact itself.</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Active warnings (caution/serious/blocking) */}
+                  {selectedArtifact.warnings.some(isWarning) && (
+                    <div>
+                      <div className="small" style={{ marginBottom: 8 }}>Warnings</div>
+                      <div className="artifact-list">
+                        {selectedArtifact.warnings.filter(isWarning).map((warning) => (
                           <div key={warning.id} className="card">
                             <div className="row">
                               <strong>{warning.title}</strong>
@@ -4588,21 +4678,305 @@ function App() {
                           </div>
                         ))}
                       </div>
-                    </>
+                    </div>
                   )}
+                </AccordionSection>
+              )
+            })()}
+
+            {/* Lineage accordion — auto-expand for derived artifacts */}
+            <AccordionSection title="Lineage" defaultOpen={selectedArtifact.kind === 'derived'}>
+              <div className="card">
+                <div className="row">
+                  <strong>Lineage</strong>
+                  <span className="badge">{selectedArtifact.kind}</span>
+                </div>
+                {selectedArtifact.kind === 'source' ? (
+                  <>
+                    <div className="small" style={{ marginTop: 8 }}>Imported into the workspace as a source artifact.</div>
+                    {selectedArtifactOriginEvent && (
+                      <div className="small muted" style={{ marginTop: 6 }}>
+                        Created by: import event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="small" style={{ marginTop: 8 }}>
+                      Upstream artifact(s): {selectedArtifact.inputArtifactIds?.map((id) => artifacts.find((a) => a.id === id)?.name ?? id).join(', ') || 'unknown upstream artifact'}
+                    </div>
+                    {selectedArtifactOriginEvent && (
+                      <>
+                        <div className="small muted" style={{ marginTop: 6 }}>Created by: {selectedArtifactOriginEvent.type} event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}</div>
+                        <div className="small" style={{ marginTop: 8, color: '#cbd5e1' }}>
+                          This artifact's stored truth comes from the output of that event. Input assumptions and provenance notes remain inspectable in the event details below.
+                        </div>
+                        {getHistoryDetailGroups(selectedArtifactOriginEvent.details).length > 0 && (
+                          <div className="card" style={{ marginTop: 10 }}>
+                            <strong className="small">Event-derived lineage facts</strong>
+    <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
+                              {getHistoryDetailGroups(selectedArtifactOriginEvent.details).map((group) => (
+                                <div key={group.title}>
+                                  <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
+                                  <div style={{ display: 'grid', gap: 6 }}>
+                                    {group.rows.map(({ key, label, renderedValue }) => (
+                                      <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 8 }}>
+                                        <span style={{ color: '#94a3b8' }}>{label}</span>
+                                        <span>{renderedValue}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {'sql' in selectedArtifactOriginEvent.details && typeof selectedArtifactOriginEvent.details.sql === 'string' && (
+                          <pre className="card code-block">
+{String(selectedArtifactOriginEvent.details.sql)}
+                          </pre>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            </AccordionSection>
+
+            {/* History accordion — moved from bottom of panel */}
+            <AccordionSection title="History" defaultOpen={false}>
+              <div className="history-list">
+                {history.length === 0 && <div className="card muted">No project history yet.</div>}
+                {history.map((event) => (
+                  <button
+                    key={event.id}
+                    className={`card ${selectedHistoryEventId === event.id ? 'selected' : ''}`}
+                    style={{ textAlign: 'left' }}
+                    onClick={() => setSelectedHistoryEventId(event.id)}
+                  >
+                    <div className="row"><strong>{event.summary}</strong><span className="badge">{event.type}</span></div>
+                    <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(event.timestamp)}</div>
+                    <div className="row" style={{ marginTop: 6, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                      {getActiveWarnings(event.warnings).length > 0 && (
+                        <span className="badge warning">{formatCount(getActiveWarnings(event.warnings).length, 'warning')}</span>
+                      )}
+                      {getCurrentNotes(event.warnings).length > 0 && (
+                        <span className="badge info">{formatCount(getCurrentNotes(event.warnings).length, 'note')}</span>
+                      )}
+                      {getProvenanceNotes(event.warnings).length > 0 && (
+                        <span className="badge historical">{formatCount(getProvenanceNotes(event.warnings).length, 'provenance note')}</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {selectedHistoryEvent && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="small" style={{ color: '#8b949e', marginBottom: 8, fontWeight: 600 }}>Event detail</div>
+                  <div className="card">
+                    <div className="row">
+                      <strong>{selectedHistoryEvent.summary}</strong>
+                      <span className="badge">{selectedHistoryEvent.type}</span>
+                    </div>
+                    <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(selectedHistoryEvent.timestamp)}</div>
+                    <div className="small" style={{ marginTop: 10 }}>
+                      Inputs: {selectedHistoryEvent.inputArtifactIds.length
+                        ? selectedHistoryEvent.inputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
+                        : 'none'}
+                    </div>
+                    <div className="small" style={{ marginTop: 6 }}>
+                      Outputs: {selectedHistoryEvent.outputArtifactIds.length
+                        ? selectedHistoryEvent.outputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
+                        : 'none'}
+                    </div>
+                    {getHistoryDetailGroups(selectedHistoryEvent.details).length > 0 && (
+                      <div className="card" style={{ marginTop: 12 }}>
+                        <strong className="small">Structured event details</strong>
+                        <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
+                          {getHistoryDetailGroups(selectedHistoryEvent.details).map((group) => (
+                            <div key={group.title}>
+                              <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
+                              <div style={{ display: 'grid', gap: 6 }}>
+                                {group.rows.map(({ key, label, renderedValue }) => (
+                                  <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8 }}>
+                                    <span style={{ color: '#94a3b8' }}>{label}</span>
+                                    <span>{renderedValue}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {selectedHistoryEvent.warnings.length > 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        {getCurrentNotes(selectedHistoryEvent.warnings).length > 0 && (
+                          <>
+                            <strong style={{ color: '#93c5fd' }}>Event notes</strong>
+                            <div className="artifact-list" style={{ marginTop: 8 }}>
+                              {getCurrentNotes(selectedHistoryEvent.warnings).map((warning) => (
+                                <div key={warning.id} className="card" style={{ borderColor: '#1e3a5f', background: '#0a1525' }}>
+                                  <div className="row">
+                                    <strong>{warning.title}</strong>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                      <span className="badge info">{getSeverityLabel(warning)}</span>
+                                      <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
+                                  <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                        {getProvenanceNotes(selectedHistoryEvent.warnings).length > 0 && (
+                          <>
+                            <strong>Event provenance</strong>
+                            <div className="artifact-list" style={{ marginTop: 8 }}>
+                              {getProvenanceNotes(selectedHistoryEvent.warnings).map((warning) => (
+                                <div key={warning.id} className="card">
+                                  <div className="row">
+                                    <strong>{warning.title}</strong>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                      <span className="badge info">{getSeverityLabel(warning)}</span>
+                                      <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
+                                  <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                        {getActiveWarnings(selectedHistoryEvent.warnings).length > 0 && (
+                          <>
+                            <strong>Event warnings</strong>
+                            <div className="artifact-list" style={{ marginTop: 8 }}>
+                              {getActiveWarnings(selectedHistoryEvent.warnings).map((warning) => (
+                                <div key={warning.id} className="card">
+                                  <div className="row">
+                                    <strong>{warning.title}</strong>
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                      <span className={`badge ${warning.severity}`}>{getSeverityLabel(warning)}</span>
+                                      <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
+                                  <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {'sql' in selectedHistoryEvent.details && typeof selectedHistoryEvent.details.sql === 'string' && (
+                      <pre className="card code-block">
+{String(selectedHistoryEvent.details.sql)}
+                      </pre>
+                    )}
+                  </div>
                 </div>
               )}
-              {'sql' in selectedHistoryEvent.details && typeof selectedHistoryEvent.details.sql === 'string' && (
-                <pre className="card code-block">
-{String(selectedHistoryEvent.details.sql)}
-                </pre>
-              )}
-            </div>
+            </AccordionSection>
           </>
         )}
       </aside>
 
-      <section className="bottom-dock">
+      {!rightPanelOpen && (
+        <button
+          className="right-panel-grip"
+          title="Open details / history"
+          onClick={() => setRightPanelOpen(true)}
+        >
+          ◀
+        </button>
+      )}
+
+      {/* Command bar */}
+      <div className="command-bar">
+        <span style={{ color: '#8b949e', fontSize: 18 }}>⌘</span>
+        <input
+          type="text"
+          className="command-bar-input"
+          placeholder="Ask anything…   / SQL   @osm @ckan @stac"
+          value={commandInput}
+          onChange={(e) => handleCommandChange(e.target.value)}
+          onFocus={() => setCommandFocused(true)}
+          onBlur={() => setTimeout(() => setCommandFocused(false), 200)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              if (commandInput.startsWith('/')) {
+                setActiveSidebar('query')
+              } else if (commandInput.startsWith('@')) {
+                setActiveSidebar('discover')
+              } else if (commandInput.trim()) {
+                setActiveSidebar('chain')
+              }
+            }
+            if (e.key === 'Escape') {
+              setCommandInput('')
+              setActiveSidebar(null)
+            }
+          }}
+        />
+        {commandInput && (
+          <button
+            className="secondary"
+            style={{ padding: '2px 8px', fontSize: 12 }}
+            onClick={() => { setCommandInput(''); setActiveSidebar(null) }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {(commandFocused || activeSidebar === 'chain') && !commandInput && (
+        <div className="command-surface">
+          <div className="panel-title" style={{ marginTop: 0 }}>Try an example</div>
+          {commandExamples.map((example) => (
+            <div
+              key={example}
+              className="command-example"
+              onMouseDown={(e) => { e.preventDefault(); applyExampleQuery(example) }}
+            >
+              {example}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <section className={`bottom-dock ${bottomDockExpanded ? 'expanded' : ''}`}>
+        {/* Collapsed bar */}
+        <div className="bottom-dock-bar" onClick={() => setBottomDockExpanded(!bottomDockExpanded)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 10, transform: bottomDockExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 'var(--weight-medium)' }}>
+              {bottomTab.charAt(0).toUpperCase() + bottomTab.slice(1)}
+              {selectedArtifact && ` — ${selectedArtifact.name}`}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            {(['table', 'sql', 'results'] as const).map(tab => (
+              <button
+                key={tab}
+                className={`tab ${bottomTab === tab ? 'active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); setBottomTab(tab); setBottomDockExpanded(true) }}
+                style={{ padding: '2px 8px', fontSize: 'var(--text-xs)' }}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Expanded content */}
+        {bottomDockExpanded && (
+        <>
         <div className="bottom-tabs">
           <button className={`tab ${bottomTab === 'table' ? 'active' : ''}`} onClick={() => setBottomTab('table')}>Table</button>
           <button className={`tab ${bottomTab === 'sql' ? 'active' : ''}`} onClick={() => setBottomTab('sql')}>SQL</button>
@@ -4832,7 +5206,22 @@ function App() {
             )}
           </div>
         )}
+        </>
+        )}
       </section>
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div className="toast-container">
+          {toasts.map(toast => (
+            <div key={toast.id} className={`toast toast-${toast.type}`}>
+              <span className="toast-message">{toast.message}</span>
+              {toast.dismissible && (
+                <button className="toast-dismiss" onClick={() => dismissToast(toast.id)}>×</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
