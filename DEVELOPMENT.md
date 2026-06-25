@@ -124,10 +124,83 @@ Zero file collision because implementer and tester owned disjoint file scopes by
 
 ### Next slices (planned)
 
-- Slice 4: Geocode + discovery prefixes (`@osm`, `@ckan`, `@stac`) — command bar routing
-- Slice 5: Undo/redo stack
-- Slice 6: Nested button fix + helper extraction + `map.moveLayer()` z-order polish
-- Slice 7: Export menu in artifact context, keyboard shortcuts
+The original list is outdated. See "Slice 4 — UX Fix Loop" below for what actually got dispatched. Current remaining work:
+
+- **Slice 5: Polish mobile UX density.** Center "Map pane" card → bottom sheet on mobile. Bottom area crowding (command bar + tab bar + attribution). Backdrop dismiss for full-screen drawers.
+- **Slice 6: Discover panel wiring.** Discovery panel still has a stub handler (`addToast('Discovery import wired — implementation in Slice 3.', 'info')`). Wire it to the discovery backend that ships in `src/lib/discovery.ts` (7 protocol clients, 14 tests).
+- **Slice 7: Geocode + discovery prefixes.** Command-bar routing for `@osm`, `@ckan`, `@stac` — currently just opens the Discovery panel instead of actually parsing the prefix.
+- **Slice 8: Undo/redo stack.** Not started.
+- **Slice 9: Export menu.** Right-panel context menu, keyboard shortcuts.
+
+---
+
+## Slice 4 — UX Fix Loop (COMPLETE 2026-06-24)
+
+Pilgrim got grumpy about UI/UX: "No human would enjoy or understand interacting with that mess." Designer sub-agent dispatched for honest critique. Five small slices shipped in one hour in response.
+
+### Slice 4.1 — Bottom dock clipping fix (commit `8cd5dc0`)
+- **Problem:** Command bar (48px tall, `bottom: 14px`) overlapped the 32px bottom dock peek bar on every viewport.
+- **Fix:** Moved command bar up so it sits above the dock peek with a gap. `.command-bar: bottom 14px → 48px`, `.command-surface: bottom 72px → 106px`.
+- **File:** `src/styles.css` (2 lines).
+
+### Slice 4.2 — Actionable empty states (commit `ad2746c`)
+- **Problem:** Every empty state was passive text. Users told what to do but given no way to do it.
+- **Fix:** Added CTAs to empty states:
+  - **Layers panel (no artifacts):** "Import file" button + "Try sample data" button + "Discover data →" link.
+  - **Saved queries:** "Save your first query" link.
+  - **Map overlay:** hidden when sidebar drawer is open; otherwise shows "Import file" + "Try sample data" buttons.
+- **Files:** `src/components/LayersPanel.tsx` (+34), `src/App.tsx` (+14), `src/styles.css` (+33).
+- **Tests:** 82 → 98 (+16 new).
+
+### Slice 4.3 — Sidebar rail affordances (commit `411757c`)
+- **Problem:** 5 identical icons with only `title` tooltips. Active state was a nearly-invisible 1px blue border. No visual distinction between Import (action trigger) and drawer toggles.
+- **Fix:**
+  - Visible labels under each icon (9px muted, brightens on hover, accent color when active).
+  - Filled active state (`rgba(20, 184, 166, 0.15)` teal background, accent icon color, border removed).
+  - Subtle 1px horizontal separator above Import button.
+  - Rail widened 48px → 56px to fit labels; drawer + bottom-dock offsets updated.
+  - Labels hidden at ≤480px for mobile space.
+- **Files:** `src/App.tsx` (+7), `src/styles.css` (+69/-7).
+- **Tests:** 98 → 107 (+9 new).
+
+### Slice 4.4 — NL plan artifact picker + disabled Execute (commit `34b1d6f`)
+- **Problem:** Free-text input for source artifact. Execute button looked enabled even when `canExecute` was false. Errors repeated 3x ("Missing source artifact" in step card, summary, plan metadata).
+- **Fix:**
+  - Replaced free-text input with `<select>` dropdown for artifact-referencing params (`source`, `mask`, `overlay`, `join_table`). Populated from spatial artifacts with name + geometry type.
+  - Interactive plan validation: selecting an artifact clears the refusal + recomputes `canExecute` (Execute transitions disabled → enabled).
+  - Disabled Execute styling: `opacity 0.5`, `cursor: not-allowed`, `filter: grayscale(0.5)`, no hover effects.
+  - Consolidated errors: removed plan-level warnings/refusals summary. One actionable line per step.
+- **Files:** `src/components/NLQueryPanel.tsx` (+89/-52), `src/styles.css` (+24).
+- **Tests:** 107/107 passing (no new test file).
+- **Note:** `ARTIFACT_PARAM_KEYS` set hardcoded — minor coupling to plan builder's intent data.
+
+### Slice 4.5 — Mobile refactor (commit `4b53bc6`)
+- **Problem:** Slice 1.5+1.6 added mobile CSS but the underlying layout assumed desktop. Sidebar rail + fixed-width drawer + full top bar all crammed into 390px.
+- **Fix:** Real mobile architecture change at ≤768px:
+  - **Sidebar rail hidden** (`display: none`, stays in DOM).
+  - **Bottom tab bar** at bottom (5 icons + labels) — same icons/state handlers as sidebar rail.
+  - **Sidebar drawers → full-screen overlays** (top:0, bottom:56px, width:100%).
+  - **Right panel grip hidden.**
+  - **Top bar collapsed** (`.btn-text` hidden, icons only, project name truncated).
+  - **Command bar repositioned** above tab bar (`bottom: 64px`).
+  - **Bottom dock above tab bar** (`bottom: 56px`).
+  - **Map bottom offset** for tab bar clearance.
+  - **`.sidebar-drawer-backdrop` hidden** (not needed for full-screen).
+- **Files:** `src/App.tsx` (+24), `src/styles.css` (+172/-131, rewrote ≤768px breakpoint).
+- **Tests:** 107/107 passing (no new test file).
+- **Verified visually:** mobile screenshot shows real bottom tab bar + hidden rail + full-screen panel overlay. Mobile-native pattern, not just CSS patches.
+
+### Loop outcome
+
+| Slice | Wall time | Tokens | Tests added | Files touched |
+|-------|-----------|--------|-------------|---------------|
+| 4.1 (direct) | ~1 min | n/a | 0 | 1 |
+| 4.2 | 14m 29s (impl 3m31s + test 10m58s) | 270k | +16 | 5 |
+| 4.3 | 17m 24s | 322k | +9 | 4 |
+| 4.4 | 14m 50s | 493k | 0 | 3 |
+| 4.5 | 21m 8s | 351k | 0 | 3 |
+
+**5 commits pushed to origin.** Loop completed at ~24:00 PDT, ~5 hours after first Slice 1 commit.
 
 ---
 
@@ -234,3 +307,10 @@ What it does NOT verify (requires fixtures + follow-up slice):
 | 2026-06-24 | **Slice 1 = map-first shell + chain visualization** | Re-shell UI without touching engine/schema. NL loop test queries (1–5) must still work. |
 | 2026-06-24 | **Chain visualization = primary operation surface** | NL resolver already produces plans; render before commit. 14 dialog buttons hidden but preserved. |
 | 2026-06-24 | **Sidebar icons: Layers / Discover / Import / Query / History** | Add more later if needed. |
+| 2026-06-24 | **Slice 1.5+1.6 — SVG icons + mobile CSS** (commit `c0e1912`) | Pilgrim rejected emoji icons + desktop-shrunk mobile. Replaced emoji with lucide-react SVGs. Added CSS media queries — but architecture still desktop, so mobile didn't actually fix. Honest lesson: CSS patches don't restructure layout philosophy. |
+| 2026-06-24 | **Slice 3.5 — extract helpers into `src/lib/layer-controls.ts`** | Slice 3 tests reimplemented logic as local functions (tester couldn't import closure-scoped helpers). Tests were theater, not testing. Extraction enables real tests against real code. |
+| 2026-06-24 | **Slice 3.6 — fix 3 latent bugs** (commit `9b359dc`) | Found by real tests after extraction: (1) zIndex collision, (2) toggleLayerVisibility missing-entry creates partial object, (3) cleanup didn't filter by spatial. All TDD-ready for future bug-fix slices. |
+| 2026-06-24 | **Slice 3.7 — z-order visual reorder + nested `<button>` fix** (commit `5d89ad4`) | Two tech debt items from SLICE_3_REVIEW.md: added `map.moveLayer()` reconciliation pass + changed outer card from `<button>` to `<div role="button">` with keyboard handlers. |
+| 2026-06-24 | **Dispatch pattern: COMPLEMENTARY** (worker + tester with disjoint file scopes) | Slice 3 fusion caused data loss (parallel writers, last-write-wins). New pattern: implementer writes src/, tester writes tests + review doc in different files. Zero collision by design. |
+| 2026-06-24 | **Verifier role removed; Judge subsumes verification** | Judge already checks acceptance criteria against code evidence. Tester is the proactive second lens (writes failing tests). Verifier was redundant cost without demonstrated value. |
+| 2026-06-24 | **Slice 4.1-4.5 — UX fix loop** (commits `8cd5dc0` → `4b53bc6`) | Pilgrim grumpy about UI/UX. Designer sub-agent dispatched for critique. 5 small slices shipped in one hour in response: bottom dock fix, empty state CTAs, sidebar affordances, NL plan picker, mobile refactor. 107/107 tests passing by end. |
