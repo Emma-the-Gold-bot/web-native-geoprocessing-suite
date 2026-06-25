@@ -53,7 +53,32 @@ For Slice 1, the operation buttons remain *hidden in the chrome* but the code pa
 
 ---
 
-## Slice 1 — Map-First Shell + Chain Visualization (in progress 2026-06-24)
+## Slice 2 — Layers Panel Extraction (COMPLETE 2026-06-24)
+
+### Status: COMPLETE (2026-06-24)
+
+Pure refactor — extracted the Layers sidebar drawer (project info, artifacts list, saved queries) from inline JSX in `App.tsx` into `src/components/LayersPanel.tsx`. Zero behavior change, all state via props, all CSS classes preserved.
+
+- App.tsx: −85 lines (5230 → 5157)
+- LayersPanel.tsx: 117 lines (new)
+- Build: ✅ exit 0, 228 modules
+- Dispatch: **Qwen 3.7+ alone, 3min 25s, 109.7k tokens** (vs Kimi K2.7's 850k tokens / 0 working code on Slice 1; vs MiMo v2.5's 376k tokens / 15min timeout on Slice 1)
+
+### Validation outcome for `complex-code` pipeline
+
+Qwen 3.7+ validated as primary complex-code worker. First real dispatch was a small, well-scoped refactor — the right kind of validation slice. Confirms:
+- 3-min 25s runtime (vs 15min timeouts on bigger slice)
+- 109.7k tokens (vs 850k for Kimi failure)
+- Byte-for-byte identical JSX preservation
+- Clean build, no fixes needed after
+
+### Open followups (Slice 1)
+- Playwright smoke test of UI shape + NL test queries 1-5
+- Cleanup: root-level CHAIN-REGISTRY.ts / OPERATION-INTENT-MAP.ts now duplicate of src/lib/operations/{chain-registry,intent-data}.ts — safe to remove
+
+---
+
+## Slice 1 — Map-First Shell + Chain Visualization (COMPLETE 2026-06-24)
 
 ### Goal
 
