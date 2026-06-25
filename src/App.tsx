@@ -2915,6 +2915,30 @@ function App() {
         />
       </nav>
 
+      {/* Bottom tab bar — mobile only (hidden on desktop via CSS) */}
+      <nav className="bottom-tab-bar" aria-label="Primary navigation">
+        <button className={`bottom-tab ${activeSidebar === 'layers' ? 'active' : ''}`} onClick={() => toggleSidebar('layers')}>
+          <Layers size={20} strokeWidth={1.5} aria-hidden="true" />
+          <span className="bottom-tab-label">Layers</span>
+        </button>
+        <button className={`bottom-tab ${activeSidebar === 'discover' ? 'active' : ''}`} onClick={() => toggleSidebar('discover')}>
+          <Search size={20} strokeWidth={1.5} aria-hidden="true" />
+          <span className="bottom-tab-label">Discover</span>
+        </button>
+        <button className="bottom-tab" onClick={() => importFileRef.current?.click()}>
+          <Plus size={20} strokeWidth={1.5} aria-hidden="true" />
+          <span className="bottom-tab-label">Import</span>
+        </button>
+        <button className={`bottom-tab ${activeSidebar === 'query' ? 'active' : ''}`} onClick={() => toggleSidebar('query')}>
+          <MessageSquare size={20} strokeWidth={1.5} aria-hidden="true" />
+          <span className="bottom-tab-label">Query</span>
+        </button>
+        <button className={`bottom-tab ${rightPanelOpen ? 'active' : ''}`} onClick={() => setRightPanelOpen(prev => !prev)}>
+          <History size={20} strokeWidth={1.5} aria-hidden="true" />
+          <span className="bottom-tab-label">History</span>
+        </button>
+      </nav>
+
       {/* Sidebar drawer backdrop (mobile) */}
       <div
         className={`sidebar-drawer-backdrop ${activeSidebar ? 'open' : ''}`}
