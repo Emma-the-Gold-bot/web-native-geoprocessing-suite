@@ -150,7 +150,7 @@ button { cursor: pointer; }
 .command-bar {
   position: fixed;
   left: 50%;
-  bottom: 14px;
+  bottom: 48px;
   transform: translateX(-50%);
   width: min(640px, 50vw);
   height: 48px;
@@ -183,7 +183,7 @@ button { cursor: pointer; }
 .command-surface {
   position: fixed;
   left: 50%;
-  bottom: 72px;
+  bottom: 106px;
   transform: translateX(-50%);
   width: min(640px, 50vw);
   max-height: 40vh;
