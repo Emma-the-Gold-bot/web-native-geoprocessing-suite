@@ -568,12 +568,36 @@ textarea.sql-editor {
   border-radius: 8px;
 }
 
+.primary[disabled],
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+.primary[disabled]:hover,
+.primary:disabled:hover {
+  /* no hover effect when disabled */
+}
+
 .secondary {
   border: 1px solid #334155;
   background: transparent;
   color: #cbd5e1;
   padding: var(--space-2) var(--space-3);
   border-radius: 8px;
+}
+
+.secondary[disabled],
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.3);
+}
+
+.secondary[disabled]:hover,
+.secondary:disabled:hover {
+  /* no hover effect when disabled */
 }
 
 .import-overlay {

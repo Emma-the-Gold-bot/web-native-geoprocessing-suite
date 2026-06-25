@@ -7,6 +7,9 @@ import { CHAIN_REGISTRY } from '../lib/operations/chain-registry';
 import { buildPlan, type ExecutionPlan, type PlannedStep } from '../lib/nl/plan-builder';
 import { executePlan } from '../lib/nl/plan-executor';
 
+/** Parameter names that represent artifact references (rendered as dropdowns) */
+const ARTIFACT_PARAM_KEYS = new Set(['source', 'mask', 'overlay', 'join_table']);
+
 /** Get human-readable label for an operation id */
 function getOperationLabel(id: string): string {
   return OPERATION_REGISTRY[id]?.label ?? id;
@@ -100,8 +103,35 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
     const newSteps = [...editedPlan.steps];
     const step = { ...newSteps[stepIndex] };
     step.params = { ...step.params, [paramKey]: value };
+
+    // When an artifact param changes, also update inputArtifacts for that role
+    const isArtifactParam = ARTIFACT_PARAM_KEYS.has(paramKey);
+    if (isArtifactParam) {
+      // Rebuild inputArtifacts: keep non-matching ones from previous step, add new if valid
+      const spatialArtifactIds = new Set(artifacts.filter(a => a.spatial).map(a => a.id));
+      const otherInputs = step.inputArtifacts.filter(id => {
+        // Keep inputs that are not currently assigned to any artifact param
+        const assignedParamValues = Object.entries(step.params)
+          .filter(([k]) => ARTIFACT_PARAM_KEYS.has(k) && k !== paramKey)
+          .map(([, v]) => String(v));
+        return !spatialArtifactIds.has(id) || !assignedParamValues.includes(id);
+      });
+      if (value && spatialArtifactIds.has(value)) {
+        step.inputArtifacts = [...otherInputs, value];
+      } else {
+        step.inputArtifacts = otherInputs;
+      }
+
+      // Clear refusal if we now have a valid artifact
+      if (value && spatialArtifactIds.has(value)) {
+        step.refusal = undefined;
+      }
+    }
+
     newSteps[stepIndex] = step;
-    setEditedPlan({ ...editedPlan, steps: newSteps });
+    // Recompute canExecute based on whether any step still has a refusal
+    const newCanExecute = !newSteps.some(s => Boolean(s.refusal));
+    setEditedPlan({ ...editedPlan, steps: newSteps, canExecute: newCanExecute });
   };
 
   /** Update the output name on a specific step */
@@ -197,23 +227,6 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
           </span>
         </div>
 
-        {/* Warnings and refusals summary */}
-        {editedPlan.steps.some(s => s.warnings.length > 0 || s.refusal) && (
-          <div style={{ marginTop: 8 }}>
-            {editedPlan.steps.map((step, i) => (
-              step.refusal ? (
-                <div key={i} className="small" style={{ color: '#ef4444', marginTop: 4 }}>
-                  ❌ Step {i + 1} ({getOperationLabel(step.operationId)}): {step.refusal}
-                </div>
-              ) : step.warnings.length > 0 ? (
-                <div key={i} className="small" style={{ color: '#f59e0b', marginTop: 4 }}>
-                  ⚠ Step {i + 1} ({getOperationLabel(step.operationId)}): {step.warnings.join('; ')}
-                </div>
-              ) : null
-            ))}
-          </div>
-        )}
-
         {/* Execute button */}
         <div className="actions" style={{ marginTop: 12 }}>
           <button
@@ -237,6 +250,18 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
     const paramEntries = Object.entries(step.params).filter(([key]) => key !== 'contract' && key !== 'attributePolicy');
     const hasRefusal = Boolean(step.refusal);
     const hasWarning = step.warnings.length > 0;
+    const spatialArtifacts = artifacts.filter(a => a.spatial);
+
+    // Consolidated error: show one actionable message per step
+    const errorMessage = step.refusal
+      ? step.refusal.includes('source')
+        ? `${step.refusal} — pick a source artifact below`
+        : step.refusal.includes('secondary')
+          ? `${step.refusal} — pick the required artifact below`
+          : step.refusal
+      : step.warnings.length > 0
+        ? step.warnings[0] // Show only the first warning, not all of them repeated
+        : null;
 
     return (
       <div className={`chain-step${hasRefusal ? ' has-refusal' : ''}${hasWarning ? ' has-warning' : ''}`}>
@@ -247,27 +272,43 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
           <span className="badge">{step.outputKind}</span>
         </div>
 
-        {/* Input artifacts */}
-        <div className="small muted" style={{ marginBottom: 8 }}>
-          Input: {step.inputArtifacts.map(id => {
-            const artifact = artifacts.find(a => a.id === id);
-            return artifact ? artifact.name : id;
-          }).join(', ')}
-        </div>
-
         {/* Editable parameters */}
         {paramEntries.length > 0 && (
           <div style={{ marginBottom: 8 }}>
-            {paramEntries.map(([key, value]) => (
-              <div className="chain-step-param" key={key}>
-                <label>{key}</label>
-                <input
-                  type="text"
-                  value={String(value ?? '')}
-                  onChange={(e) => handleStepParamChange(index, key, e.target.value)}
-                />
-              </div>
-            ))}
+            {paramEntries.map(([key, value]) => {
+              const isArtifactParam = ARTIFACT_PARAM_KEYS.has(key);
+
+              if (isArtifactParam) {
+                return (
+                  <div className="chain-step-param" key={key}>
+                    <label>{key}</label>
+                    <select
+                      value={String(value ?? '')}
+                      onChange={(e) => handleStepParamChange(index, key, e.target.value)}
+                      disabled={spatialArtifacts.length === 0}
+                    >
+                      <option value="">Select an artifact...</option>
+                      {spatialArtifacts.map(a => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} ({a.geometryType ?? a.kind})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="chain-step-param" key={key}>
+                  <label>{key}</label>
+                  <input
+                    type="text"
+                    value={String(value ?? '')}
+                    onChange={(e) => handleStepParamChange(index, key, e.target.value)}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -281,17 +322,10 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
           />
         </div>
 
-        {/* Refusal */}
-        {step.refusal && (
-          <div className="small" style={{ color: '#ef4444', marginTop: 8 }}>
-            ❌ {step.refusal}
-          </div>
-        )}
-
-        {/* Warnings */}
-        {step.warnings.length > 0 && !step.refusal && (
-          <div className="small" style={{ color: '#f59e0b', marginTop: 8 }}>
-            ⚠ {step.warnings.join('; ')}
+        {/* Consolidated error — one actionable line */}
+        {errorMessage && (
+          <div className="small" style={{ color: hasRefusal ? '#ef4444' : '#f59e0b', marginTop: 8 }}>
+            {hasRefusal ? '❌' : '⚠'} {errorMessage}
           </div>
         )}
       </div>
