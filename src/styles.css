@@ -223,10 +223,62 @@ button { cursor: pointer; }
   color: #8b949e;
 }
 
+/* Bottom sheet component */
+.bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 96px;
+  background: rgba(22, 27, 34, 0.98);
+  border: 1px solid #30363d;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+  transform: translateY(100%);
+  transition: transform 200ms ease;
+  max-height: 50vh;
+  overflow: auto;
+  z-index: 37;
+}
+
+.bottom-sheet-handle {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bottom-sheet-handle::before {
+  content: '';
+  width: 40px;
+  height: 4px;
+  background: #30363d;
+  border-radius: 2px;
+  transition: background 150ms ease;
+}
+
+.bottom-sheet-handle:hover::before {
+  background: #8b949e;
+}
+
+.bottom-sheet--collapsed {
+  transform: translateY(calc(100% - 8px));
+}
+
+.bottom-sheet--expanded {
+  transform: translateY(0);
+}
+
+.bottom-sheet-content {
+  padding: var(--space-3);
+}
+
+/* Command surface (now part of command bar sheet) */
 .command-surface {
   position: fixed;
   left: 50%;
-  bottom: 106px;
+  bottom: 96px;
   transform: translateX(-50%);
   width: min(640px, 50vw);
   max-height: 40vh;
@@ -253,21 +305,54 @@ button { cursor: pointer; }
 
 .bottom-dock {
   position: fixed;
-  left: 56px;
+  left: 0;
   right: 0;
   bottom: 0;
   max-height: 45vh;
   background: #161b22;
   border-top: 1px solid #30363d;
-  overflow: auto;
-  padding: var(--space-3);
-  z-index: 20;
-  transform: translateY(calc(100% - 32px));
+  border-radius: 14px 14px 0 0;
+  overflow: hidden;
+  z-index: 35;
+  transform: translateY(calc(100% - 6px));
   transition: transform 200ms ease;
 }
 
 .bottom-dock.expanded {
   transform: translateY(0);
+  overflow: auto;
+}
+
+.bottom-dock-handle {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px;
+  cursor: pointer;
+  user-select: none;
+  background: #161b22;
+  border-bottom: 1px solid transparent;
+}
+
+.bottom-dock-handle:hover {
+  background: #1c2128;
+}
+
+.bottom-dock-handle::before {
+  content: '';
+  width: 40px;
+  height: 4px;
+  background: #30363d;
+  border-radius: 2px;
+  transition: background 150ms ease;
+}
+
+.bottom-dock-handle:hover::before {
+  background: #8b949e;
+}
+
+.bottom-dock-content {
+  padding: var(--space-3);
 }
 
 .bottom-dock-bar {
@@ -276,15 +361,47 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
   background: #161b22;
-  height: 32px;
   user-select: none;
+  border-bottom: 1px solid #30363d;
 }
 
 .bottom-dock-bar:hover {
   background: #1c2128;
+}
+
+/* NL plan sheet */
+.nl-plan-sheet {
+  z-index: 38;
+  max-height: 50vh;
+}
+
+.nl-plan-sheet .nl-query-panel {
+  width: 100%;
+}
+
+.nl-plan-sheet .chain-sequence {
+  width: 100%;
+}
+
+.nl-query-panel--sheet {
+  width: 100%;
+}
+
+/* Empty state bottom sheet */
+.empty-state-sheet {
+  z-index: 37;
+  max-height: 30vh;
+}
+
+/* Backdrop for mobile sheets */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 34;
 }
 
 /* Chain visualization */
@@ -1052,14 +1169,6 @@ button.link:hover {
     font-size: var(--text-base);
   }
 
-  .command-surface {
-    bottom: 118px;
-    left: var(--space-2);
-    right: var(--space-2);
-    width: auto;
-    transform: none;
-  }
-
   /* Sidebar drawer: full-screen overlay on mobile */
   .sidebar-drawer {
     position: fixed;
@@ -1102,6 +1211,28 @@ button.link:hover {
     bottom: 56px;
   }
 
+  /* Bottom sheets: anchor above command bar on mobile */
+  .bottom-sheet {
+    bottom: 108px;
+  }
+
+  .nl-plan-sheet {
+    bottom: 108px;
+    max-height: 50vh;
+  }
+
+  .empty-state-sheet {
+    bottom: 108px;
+  }
+
+  .command-surface {
+    bottom: 118px;
+    left: var(--space-2);
+    right: var(--space-2);
+    width: auto;
+    transform: none;
+  }
+
   /* Main pane: offset bottom for tab bar */
   .main-pane {
     bottom: 56px;
@@ -1125,10 +1256,26 @@ button.link:hover {
   .command-bar {
     height: 40px;
     bottom: 60px;
+    left: 0;
+    right: 0;
+    width: auto;
+    margin: 0 var(--space-1);
   }
 
   .command-surface {
     bottom: 110px;
+    left: var(--space-1);
+    right: var(--space-1);
+    width: auto;
+    transform: none;
+  }
+
+  .bottom-sheet {
+    max-height: 70vh;
+  }
+
+  .nl-plan-sheet {
+    max-height: 70vh;
   }
 
   .bottom-tab {

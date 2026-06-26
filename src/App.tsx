@@ -3243,116 +3243,12 @@ function App() {
             </>
           )}
 
-          {activeSidebar === 'chain' && (
-            <>
-              <h2 className="panel-title">Plan</h2>
-              <NLQueryPanel
-                artifacts={artifacts}
-                addArtifact={(artifact) => setArtifacts(prev => [...prev, artifact])}
-                onPlanExecuted={(result) => {
-                  if (result.success) {
-                    setHistory(prev => [...prev, ...result.historyEvents])
-                    addToast(`Executed plan: ${result.artifacts.length} artifact(s) created`, 'success')
-                    if (result.artifacts[0]) setSelectedArtifactId(result.artifacts[0].id)
-                  } else {
-                    addToast(`Plan failed: ${result.errors.join(', ')}`, 'error')
-                  }
-                }}
-                externalQuery={commandInput}
-              />
-            </>
-          )}
         </aside>
       )}
 
       <main className="main-pane">
         <div ref={mapNodeRef} className="map-container" />
-        {(() => {
-          const renderableArtifacts = artifacts.filter((artifact) => artifact.spatial && isFeatureCollection(artifact.data))
-          const hasRenderableArtifacts = renderableArtifacts.length > 0
-          const selectedIsRenderable = Boolean(selectedArtifact?.spatial && isFeatureCollection(selectedArtifact.data))
-          const selectedHasRenderIssue = Boolean(selectedArtifact?.renderIssue)
-          const selectedSpatialNoData = Boolean(selectedArtifact?.spatial && !isFeatureCollection(selectedArtifact.data) && !selectedArtifact?.renderIssue)
-          const selectedTabularOnly = Boolean(selectedArtifact && !selectedArtifact.spatial)
-          const selectedMeasurementTable = Boolean(selectedArtifact && getArtifactOutputKind(selectedArtifact) === 'measurement-table')
-
-          let title: string | null = null
-          let message = ''
-          let hint = ''
-          let tone: 'neutral' | 'warning' = 'neutral'
-
-          if (!selectedArtifact && !hasRenderableArtifacts) {
-            title = 'Map pane'
-            message = 'Import or load a spatial dataset to see it on the map.'
-            hint = 'Supports GeoJSON (Point, LineString, Polygon, MultiPolygon) with direct map rendering.'
-          } else if (selectedHasRenderIssue && selectedArtifact) {
-            title = 'Map unavailable'
-            message = selectedArtifact.renderIssue ?? 'This artifact cannot currently be rendered in the map pane.'
-            hint = 'The artifact remains queryable and available in the table view.'
-            tone = 'warning'
-          } else if (selectedSpatialNoData && selectedArtifact) {
-            title = 'Map unavailable'
-            message = `${selectedArtifact.name} is marked as spatial, but the current data attached to it is not map-renderable.`
-            hint = 'You can still inspect the artifact in the table and details views.'
-            tone = 'warning'
-          } else if (selectedMeasurementTable && selectedArtifact) {
-            title = 'Measurement output'
-            message = `${selectedArtifact.name} is a measurement table with no geometry to draw.`
-            hint = 'This output is intentionally tabular. Inspect rows, SQL, and lineage rather than expecting a derived map layer.'
-            tone = 'warning'
-          } else if (selectedTabularOnly && selectedArtifact) {
-            title = 'Map unavailable'
-            message = `${selectedArtifact.name} is a tabular artifact with no geometry to draw.`
-            hint = 'Select a spatial artifact to focus the map, or keep working in the table and SQL views.'
-            tone = 'warning'
-          }
-
-          if (!title) return null
-
-          // Hide the centered map overlay when a sidebar drawer is open (redundant with drawer CTAs)
-          if (activeSidebar) return null
-
-          return (
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-              zIndex: 5,
-            }}>
-              <div
-                className="card"
-                style={{
-                  textAlign: 'center',
-                  maxWidth: 420,
-                  background: tone === 'warning' ? '#3f2a11' : '#111827',
-                  borderColor: tone === 'warning' ? '#f59e0b' : undefined,
-                }}
-              >
-                <div className="muted small">{title}</div>
-                <div style={{ marginTop: 8 }}>{message}</div>
-                {hint && (
-                  <div className="muted small" style={{ marginTop: 8 }}>
-                    {hint}
-                  </div>
-                )}
-                {/* Import CTA — only shown for the neutral "no data" empty state */}
-                {tone === 'neutral' && (
-                  <div className="empty-state-actions" style={{ marginTop: 'var(--space-3)', pointerEvents: 'auto' }}>
-                    <button className="secondary empty-state-btn" onClick={() => importFileRef.current?.click()}>
-                      Import file
-                    </button>
-                    <button className="secondary empty-state-btn" onClick={openSampleImport}>
-                      Try sample data
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })()}
+        {/* Centered overlay removed — empty state CTAs moved to bottom sheet, warnings handled by toasts */}
         {importStage === 'scanning' && (
           <div className="import-overlay">
             <div className="row">
@@ -5251,39 +5147,83 @@ function App() {
         </div>
       )}
 
-      <section className={`bottom-dock ${bottomDockExpanded ? 'expanded' : ''}`}>
-        {/* Collapsed bar */}
-        <div className="bottom-dock-bar" onClick={() => setBottomDockExpanded(!bottomDockExpanded)}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 10, transform: bottomDockExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
-            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 'var(--weight-medium)' }}>
-              {bottomTab.charAt(0).toUpperCase() + bottomTab.slice(1)}
-              {selectedArtifact && ` — ${selectedArtifact.name}`}
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            {(['table', 'sql', 'results'] as const).map(tab => (
-              <button
-                key={tab}
-                className={`tab ${bottomTab === tab ? 'active' : ''}`}
-                onClick={(e) => { e.stopPropagation(); setBottomTab(tab); setBottomDockExpanded(true) }}
-                style={{ padding: '2px 8px', fontSize: 'var(--text-xs)' }}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
+      {/* NL plan bottom sheet — shown when chain visualization is active */}
+      {activeSidebar === 'chain' && (
+        <div className="bottom-sheet nl-plan-sheet bottom-sheet--expanded">
+          <div className="bottom-sheet-handle" onClick={() => setActiveSidebar(null)} />
+          <div className="bottom-sheet-content">
+            <h2 className="panel-title" style={{ marginTop: 0 }}>Plan</h2>
+            <NLQueryPanel
+              artifacts={artifacts}
+              addArtifact={(artifact) => setArtifacts(prev => [...prev, artifact])}
+              onPlanExecuted={(result) => {
+                if (result.success) {
+                  setHistory(prev => [...prev, ...result.historyEvents])
+                  addToast(`Executed plan: ${result.artifacts.length} artifact(s) created`, 'success')
+                  if (result.artifacts[0]) setSelectedArtifactId(result.artifacts[0].id)
+                } else {
+                  addToast(`Plan failed: ${result.errors.join(', ')}`, 'error')
+                }
+              }}
+              externalQuery={commandInput}
+              onClose={() => setActiveSidebar(null)}
+              sheetMode={true}
+            />
           </div>
         </div>
+      )}
+
+      {/* Empty state bottom sheet — shown when no data exists */}
+      {!selectedArtifact && artifacts.filter(a => a.spatial && isFeatureCollection(a.data)).length === 0 && !activeSidebar && (
+        <div className="bottom-sheet empty-state-sheet bottom-sheet--expanded">
+          <div className="bottom-sheet-handle" />
+          <div className="bottom-sheet-content" style={{ textAlign: 'center' }}>
+            <div className="muted small">Map pane</div>
+            <div style={{ marginTop: 8 }}>Import or load a spatial dataset to see it on the map.</div>
+            <div className="muted small" style={{ marginTop: 8 }}>Supports GeoJSON (Point, LineString, Polygon, MultiPolygon) with direct map rendering.</div>
+            <div className="empty-state-actions" style={{ marginTop: 'var(--space-3)' }}>
+              <button className="secondary empty-state-btn" onClick={() => importFileRef.current?.click()}>
+                Import file
+              </button>
+              <button className="secondary empty-state-btn" onClick={openSampleImport}>
+                Try sample data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <section className={`bottom-dock ${bottomDockExpanded ? 'expanded' : ''}`}>
+        {/* Handle (always visible) — collapsed = handle only, expanded = full bar + content */}
+        <div className="bottom-dock-handle" onClick={() => setBottomDockExpanded(!bottomDockExpanded)} />
+
+        {/* Tab bar (visible when expanded) */}
+        {bottomDockExpanded && (
+          <div className="bottom-dock-bar">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 'var(--weight-medium)' }}>
+                {bottomTab.charAt(0).toUpperCase() + bottomTab.slice(1)}
+                {selectedArtifact && ` — ${selectedArtifact.name}`}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              {(['table', 'sql', 'results'] as const).map(tab => (
+                <button
+                  key={tab}
+                  className={`tab ${bottomTab === tab ? 'active' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); setBottomTab(tab) }}
+                  style={{ padding: '2px 8px', fontSize: 'var(--text-xs)' }}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Expanded content */}
         {bottomDockExpanded && (
         <>
-        <div className="bottom-tabs">
-          <button className={`tab ${bottomTab === 'table' ? 'active' : ''}`} onClick={() => setBottomTab('table')}>Table</button>
-          <button className={`tab ${bottomTab === 'sql' ? 'active' : ''}`} onClick={() => setBottomTab('sql')}>SQL</button>
-          <button className={`tab ${bottomTab === 'results' ? 'active' : ''}`} onClick={() => setBottomTab('results')}>Results</button>
-        </div>
-
         {bottomTab === 'table' && (
           <div>
             {selectedArtifact && (

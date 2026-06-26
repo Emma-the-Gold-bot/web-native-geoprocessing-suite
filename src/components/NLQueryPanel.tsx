@@ -27,9 +27,11 @@ interface NLQueryPanelProps {
   onClose?: () => void;
   /** Called when execution completes successfully */
   onExecutionComplete?: () => void;
+  /** When true, layout adapts for bottom-sheet context (full width, horizontal step layout) */
+  sheetMode?: boolean;
 }
 
-export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, externalQuery, onClose, onExecutionComplete }: NLQueryPanelProps) {
+export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, externalQuery, onClose, onExecutionComplete, sheetMode = false }: NLQueryPanelProps) {
   const [query, setQuery] = useState('');
   const [candidates, setCandidates] = useState<ResolutionCandidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<ResolutionCandidate | null>(null);
@@ -333,7 +335,7 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
   };
 
   return (
-    <div className="nl-query-panel">
+    <div className={`nl-query-panel${sheetMode ? ' nl-query-panel--sheet' : ''}`}>
       {/* Resolving indicator */}
       {isResolving && (
         <div className="small muted" style={{ marginBottom: 8 }}>

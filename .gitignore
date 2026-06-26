@@ -10,3 +10,5 @@ tsconfig.tsbuildinfo
 .env.local
 smoke-screenshots/
 screenshots/
+discovery/.venv/
+node_modules/
