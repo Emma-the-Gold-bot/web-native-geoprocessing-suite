@@ -448,6 +448,7 @@ function App() {
   const [importStage, setImportStage] = useState<ImportStage>('idle')
   const [importing, setImporting] = useState(false)
   const [selectedHistoryEventId, setSelectedHistoryEventId] = useState<string | null>(null)
+  const [rightPanelTab, setRightPanelTab] = useState<'details' | 'history'>('details')
   const [statusMessage, setStatusMessage] = useState<string>('Ready to import')
   
   // Toast notification system
@@ -4866,8 +4867,41 @@ function App() {
       </main>
 
       <aside className={`right-panel ${rightPanelOpen ? 'open' : ''}`}>
-        <div className="row" style={{ marginBottom: 12 }}>
-          <h2 className="panel-title" style={{ margin: 0 }}>Details / History</h2>
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            style={{
+              flex: 1,
+              padding: '6px 12px',
+              fontSize: 13,
+              fontWeight: 600,
+              background: rightPanelTab === 'details' ? '#1e293b' : 'transparent',
+              color: rightPanelTab === 'details' ? '#e2e8f0' : '#64748b',
+              border: 'none',
+              borderBottom: rightPanelTab === 'details' ? '2px solid #3b82f6' : '2px solid transparent',
+              cursor: 'pointer',
+              borderRadius: '4px 4px 0 0',
+            }}
+            onClick={() => setRightPanelTab('details')}
+          >
+            Details
+          </button>
+          <button
+            style={{
+              flex: 1,
+              padding: '6px 12px',
+              fontSize: 13,
+              fontWeight: 600,
+              background: rightPanelTab === 'history' ? '#1e293b' : 'transparent',
+              color: rightPanelTab === 'history' ? '#e2e8f0' : '#64748b',
+              border: 'none',
+              borderBottom: rightPanelTab === 'history' ? '2px solid #3b82f6' : '2px solid transparent',
+              cursor: 'pointer',
+              borderRadius: '4px 4px 0 0',
+            }}
+            onClick={() => setRightPanelTab('history')}
+          >
+            History{history.length > 0 ? ` (${history.length})` : ''}
+          </button>
           <button
             className="secondary"
             style={{ padding: '2px 8px', fontSize: 12 }}
@@ -4876,7 +4910,7 @@ function App() {
             ×
           </button>
         </div>
-        {!selectedArtifact && (
+        {rightPanelTab === 'details' && !selectedArtifact && (
           <AccordionSection title="Project Summary" defaultOpen={true} badge={formatCount(artifacts.length, 'artifact')}>
             <div className="small muted" style={{ marginBottom: 8 }}>{statusMessage}</div>
             <div className="actions" style={{ marginTop: 0, gap: 8 }}>
@@ -4888,7 +4922,7 @@ function App() {
             </div>
           </AccordionSection>
         )}
-        {selectedArtifact && (
+        {rightPanelTab === 'details' && selectedArtifact && (
           <>
             {/* Focused Feature accordion — shown at top when a feature is selected */}
             {selectedRowIndex !== null && selectedArtifact.spatial && isFeatureCollection(selectedArtifact.data) && (
@@ -5136,11 +5170,20 @@ function App() {
                 )}
               </div>
             </AccordionSection>
-
-            {/* History accordion — moved from bottom of panel */}
-            <AccordionSection title="History" defaultOpen={false}>
+          </>
+        )}
+        {rightPanelTab === 'history' && (
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {history.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
+                <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.5 }}>⏱</div>
+                <div style={{ fontSize: 14, lineHeight: 1.5 }}>
+                  No operations yet. Run a geoprocessing operation to see history here.
+                </div>
+              </div>
+            )}
+            {history.length > 0 && (
               <div className="history-list">
-                {history.length === 0 && <div className="card muted">No project history yet.</div>}
                 {history.map((event) => (
                   <button
                     key={event.id}
@@ -5164,119 +5207,119 @@ function App() {
                   </button>
                 ))}
               </div>
-              {selectedHistoryEvent && (
-                <div style={{ marginTop: 16 }}>
-                  <div className="small" style={{ color: '#8b949e', marginBottom: 8, fontWeight: 600 }}>Event detail</div>
-                  <div className="card">
-                    <div className="row">
-                      <strong>{selectedHistoryEvent.summary}</strong>
-                      <span className="badge">{selectedHistoryEvent.type}</span>
-                    </div>
-                    <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(selectedHistoryEvent.timestamp)}</div>
-                    <div className="small" style={{ marginTop: 10 }}>
-                      Inputs: {selectedHistoryEvent.inputArtifactIds.length
-                        ? selectedHistoryEvent.inputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
-                        : 'none'}
-                    </div>
-                    <div className="small" style={{ marginTop: 6 }}>
-                      Outputs: {selectedHistoryEvent.outputArtifactIds.length
-                        ? selectedHistoryEvent.outputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
-                        : 'none'}
-                    </div>
-                    {getHistoryDetailGroups(selectedHistoryEvent.details).length > 0 && (
-                      <div className="card" style={{ marginTop: 12 }}>
-                        <strong className="small">Structured event details</strong>
-                        <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
-                          {getHistoryDetailGroups(selectedHistoryEvent.details).map((group) => (
-                            <div key={group.title}>
-                              <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
-                              <div style={{ display: 'grid', gap: 6 }}>
-                                {group.rows.map(({ key, label, renderedValue }) => (
-                                  <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8 }}>
-                                    <span style={{ color: '#94a3b8' }}>{label}</span>
-                                    <span>{renderedValue}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {selectedHistoryEvent.warnings.length > 0 && (
-                      <div style={{ marginTop: 12 }}>
-                        {getCurrentNotes(selectedHistoryEvent.warnings).length > 0 && (
-                          <>
-                            <strong style={{ color: '#93c5fd' }}>Event notes</strong>
-                            <div className="artifact-list" style={{ marginTop: 8 }}>
-                              {getCurrentNotes(selectedHistoryEvent.warnings).map((warning) => (
-                                <div key={warning.id} className="card" style={{ borderColor: '#1e3a5f', background: '#0a1525' }}>
-                                  <div className="row">
-                                    <strong>{warning.title}</strong>
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                      <span className="badge info">{getSeverityLabel(warning)}</span>
-                                      <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                                    </div>
-                                  </div>
-                                  <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                                  <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                        {getProvenanceNotes(selectedHistoryEvent.warnings).length > 0 && (
-                          <>
-                            <strong>Event provenance</strong>
-                            <div className="artifact-list" style={{ marginTop: 8 }}>
-                              {getProvenanceNotes(selectedHistoryEvent.warnings).map((warning) => (
-                                <div key={warning.id} className="card">
-                                  <div className="row">
-                                    <strong>{warning.title}</strong>
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                      <span className="badge info">{getSeverityLabel(warning)}</span>
-                                      <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                                    </div>
-                                  </div>
-                                  <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                                  <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                        {getActiveWarnings(selectedHistoryEvent.warnings).length > 0 && (
-                          <>
-                            <strong>Event warnings</strong>
-                            <div className="artifact-list" style={{ marginTop: 8 }}>
-                              {getActiveWarnings(selectedHistoryEvent.warnings).map((warning) => (
-                                <div key={warning.id} className="card">
-                                  <div className="row">
-                                    <strong>{warning.title}</strong>
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                      <span className={`badge ${warning.severity}`}>{getSeverityLabel(warning)}</span>
-                                      <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                                    </div>
-                                  </div>
-                                  <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                                  <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-                    {'sql' in selectedHistoryEvent.details && typeof selectedHistoryEvent.details.sql === 'string' && (
-                      <pre className="card code-block">
-{String(selectedHistoryEvent.details.sql)}
-                      </pre>
-                    )}
+            )}
+            {selectedHistoryEvent && (
+              <div style={{ marginTop: 16 }}>
+                <div className="small" style={{ color: '#8b949e', marginBottom: 8, fontWeight: 600 }}>Event detail</div>
+                <div className="card">
+                  <div className="row">
+                    <strong>{selectedHistoryEvent.summary}</strong>
+                    <span className="badge">{selectedHistoryEvent.type}</span>
                   </div>
+                  <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(selectedHistoryEvent.timestamp)}</div>
+                  <div className="small" style={{ marginTop: 10 }}>
+                    Inputs: {selectedHistoryEvent.inputArtifactIds.length
+                      ? selectedHistoryEvent.inputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
+                      : 'none'}
+                  </div>
+                  <div className="small" style={{ marginTop: 6 }}>
+                    Outputs: {selectedHistoryEvent.outputArtifactIds.length
+                      ? selectedHistoryEvent.outputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
+                      : 'none'}
+                  </div>
+                  {getHistoryDetailGroups(selectedHistoryEvent.details).length > 0 && (
+                    <div className="card" style={{ marginTop: 12 }}>
+                      <strong className="small">Structured event details</strong>
+                      <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
+                        {getHistoryDetailGroups(selectedHistoryEvent.details).map((group) => (
+                          <div key={group.title}>
+                            <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
+                            <div style={{ display: 'grid', gap: 6 }}>
+                              {group.rows.map(({ key, label, renderedValue }) => (
+                                <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8 }}>
+                                  <span style={{ color: '#94a3b8' }}>{label}</span>
+                                  <span>{renderedValue}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {selectedHistoryEvent.warnings.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      {getCurrentNotes(selectedHistoryEvent.warnings).length > 0 && (
+                        <>
+                          <strong style={{ color: '#93c5fd' }}>Event notes</strong>
+                          <div className="artifact-list" style={{ marginTop: 8 }}>
+                            {getCurrentNotes(selectedHistoryEvent.warnings).map((warning) => (
+                              <div key={warning.id} className="card" style={{ borderColor: '#1e3a5f', background: '#0a1525' }}>
+                                <div className="row">
+                                  <strong>{warning.title}</strong>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <span className="badge info">{getSeverityLabel(warning)}</span>
+                                    <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
+                                  </div>
+                                </div>
+                                <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
+                                <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {getProvenanceNotes(selectedHistoryEvent.warnings).length > 0 && (
+                        <>
+                          <strong>Event provenance</strong>
+                          <div className="artifact-list" style={{ marginTop: 8 }}>
+                            {getProvenanceNotes(selectedHistoryEvent.warnings).map((warning) => (
+                              <div key={warning.id} className="card">
+                                <div className="row">
+                                  <strong>{warning.title}</strong>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <span className="badge info">{getSeverityLabel(warning)}</span>
+                                    <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
+                                  </div>
+                                </div>
+                                <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
+                                <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {getActiveWarnings(selectedHistoryEvent.warnings).length > 0 && (
+                        <>
+                          <strong>Event warnings</strong>
+                          <div className="artifact-list" style={{ marginTop: 8 }}>
+                            {getActiveWarnings(selectedHistoryEvent.warnings).map((warning) => (
+                              <div key={warning.id} className="card">
+                                <div className="row">
+                                  <strong>{warning.title}</strong>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <span className={`badge ${warning.severity}`}>{getSeverityLabel(warning)}</span>
+                                    <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
+                                  </div>
+                                </div>
+                                <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
+                                <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {'sql' in selectedHistoryEvent.details && typeof selectedHistoryEvent.details.sql === 'string' && (
+                    <pre className="card code-block">
+{String(selectedHistoryEvent.details.sql)}
+                    </pre>
+                  )}
                 </div>
-              )}
-            </AccordionSection>
-          </>
+              </div>
+            )}
+          </div>
         )}
       </aside>
 

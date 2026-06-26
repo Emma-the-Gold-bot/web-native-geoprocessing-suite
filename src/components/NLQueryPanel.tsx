@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Artifact, HistoryEvent } from '../types';
 import { resolveQuery, type ResolutionCandidate } from '../lib/nl/query-resolver';
 import { OPERATION_INTENT_MAP } from '../lib/operations/intent-data';
@@ -6,6 +6,7 @@ import { OPERATION_REGISTRY } from '../lib/operations/registry';
 import { CHAIN_REGISTRY } from '../lib/operations/chain-registry';
 import { buildPlan, type ExecutionPlan, type PlannedStep } from '../lib/nl/plan-builder';
 import { executePlan } from '../lib/nl/plan-executor';
+import { isFeatureCollection } from '../lib/utils';
 
 /** Parameter names that represent artifact references (rendered as dropdowns) */
 const ARTIFACT_PARAM_KEYS = new Set(['source', 'mask', 'overlay', 'join_table']);
@@ -40,6 +41,43 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
   const [isResolving, setIsResolving] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResult, setExecutionResult] = useState<{ success: boolean; errors: string[] } | null>(null);
+  const [selectedSourceArtifactId, setSelectedSourceArtifactId] = useState<string>('');
+  const autoSelectAppliedRef = useRef<string | null>(null);
+
+  /** Spatial artifacts available as sources (spatial + FeatureCollection data) */
+  const spatialArtifacts = artifacts.filter(
+    (a) => a.spatial && isFeatureCollection(a.data),
+  );
+
+  // Auto-select when exactly one spatial artifact and nothing manually chosen yet
+  useEffect(() => {
+    if (!editedPlan) return;
+    // Only auto-select if exactly one spatial artifact and we haven't applied it yet for this plan
+    if (spatialArtifacts.length === 1) {
+      const onlyId = spatialArtifacts[0].id;
+      if (autoSelectAppliedRef.current !== editedPlan.id + ':' + onlyId) {
+        setSelectedSourceArtifactId(onlyId);
+        autoSelectAppliedRef.current = editedPlan.id + ':' + onlyId;
+      }
+    } else if (spatialArtifacts.length === 0) {
+      setSelectedSourceArtifactId('');
+    }
+  }, [editedPlan, spatialArtifacts]);
+
+  // Whenever selectedSourceArtifactId changes, propagate to source param of step 0 (or all steps that need it)
+  useEffect(() => {
+    if (!editedPlan || editedPlan.steps.length === 0) return;
+    const firstStep = editedPlan.steps[0];
+    // Find the first artifact param key on this step
+    const sourceParamKey = Object.keys(firstStep.params).find(
+      (k) => ARTIFACT_PARAM_KEYS.has(k),
+    );
+    if (!sourceParamKey) return;
+    const currentValue = String(firstStep.params[sourceParamKey] ?? '');
+    if (currentValue !== selectedSourceArtifactId) {
+      handleStepParamChange(0, sourceParamKey, selectedSourceArtifactId);
+    }
+  }, [selectedSourceArtifactId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resolve external query when it changes
   useEffect(() => {
@@ -55,6 +93,8 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
       setSelectedCandidate(null);
       setPlan(null);
       setEditedPlan(null);
+      setSelectedSourceArtifactId('');
+      autoSelectAppliedRef.current = null;
       return;
     }
 
@@ -67,10 +107,12 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
         const builtPlan = buildPlan(resolved[0], artifacts);
         setPlan(builtPlan);
         setEditedPlan(builtPlan);
+        autoSelectAppliedRef.current = null;
       } else {
         setSelectedCandidate(null);
         setPlan(null);
         setEditedPlan(null);
+        setSelectedSourceArtifactId('');
       }
     } catch (error) {
       console.error('Query resolution error:', error);
@@ -78,6 +120,7 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
       setSelectedCandidate(null);
       setPlan(null);
       setEditedPlan(null);
+      setSelectedSourceArtifactId('');
     } finally {
       setIsResolving(false);
     }
@@ -194,12 +237,84 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
   const renderPlan = () => {
     if (!editedPlan) return null;
     const isChain = editedPlan.steps.length > 1;
+    const firstStep = editedPlan.steps[0];
+    const hasArtifactParam = firstStep && Object.keys(firstStep.params).some((k) => ARTIFACT_PARAM_KEYS.has(k));
+    const selectedArtifact = spatialArtifacts.find((a) => a.id === selectedSourceArtifactId);
+
+    // Build enhanced description that includes the selected artifact name
+    let displayDescription = editedPlan.description;
+    if (selectedArtifact && firstStep) {
+      // Replace generic references with specific artifact name where possible
+      // e.g. "Buffer by 500 feet" → "Buffer parcels by 500 feet"
+      const opLabel = getOperationLabel(firstStep.operationId);
+      if (displayDescription.startsWith(opLabel) && !displayDescription.includes(selectedArtifact.name)) {
+        displayDescription = displayDescription.replace(opLabel, `${opLabel} ${selectedArtifact.name}`);
+      }
+    }
 
     return (
       <div>
+        {/* Source layer picker — shown when plan has an artifact parameter */}
+        {hasArtifactParam && (
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 'var(--text-sm)',
+                color: '#94a3b8',
+                marginBottom: 4,
+                fontWeight: 500,
+              }}
+            >
+              Source layer
+            </label>
+            {spatialArtifacts.length === 0 ? (
+              <div
+                className="small"
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  background: '#1c1c2e',
+                  border: '1px solid #334155',
+                  color: '#f59e0b',
+                }}
+              >
+                No spatial data loaded — import a dataset first.
+              </div>
+            ) : (
+              <select
+                value={selectedSourceArtifactId}
+                onChange={(e) => {
+                  setSelectedSourceArtifactId(e.target.value);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #334155',
+                  background: '#1a1a2e',
+                  color: '#e2e8f0',
+                  fontSize: 'var(--text-sm)',
+                  cursor: 'pointer',
+                  appearance: 'auto',
+                }}
+              >
+                {spatialArtifacts.length > 1 && (
+                  <option value="">Select a layer…</option>
+                )}
+                {spatialArtifacts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} — {a.geometryType ?? a.kind}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
         {/* Plan description */}
         <div className="small muted" style={{ marginBottom: 8 }}>
-          {editedPlan.description}
+          {displayDescription}
         </div>
 
         {/* Chain visualization */}
@@ -252,7 +367,6 @@ export function NLQueryPanel({ artifacts, addArtifact, engine, onPlanExecuted, e
     const paramEntries = Object.entries(step.params).filter(([key]) => key !== 'contract' && key !== 'attributePolicy');
     const hasRefusal = Boolean(step.refusal);
     const hasWarning = step.warnings.length > 0;
-    const spatialArtifacts = artifacts.filter(a => a.spatial);
 
     // Consolidated error: show one actionable message per step
     const errorMessage = step.refusal
