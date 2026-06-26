@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen } from 'lucide-react'
+import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen, Undo2, Redo2 } from 'lucide-react'
 import type { DisplayTransformStatus } from './lib/spatial/display-transform'
 import maplibregl from 'maplibre-gl'
 import type { Artifact, BBox, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence, LayerSettings } from './types'
@@ -471,6 +471,78 @@ function App() {
   function dismissToast(id: string) {
     setToasts(prev => prev.filter(t => t.id !== id))
   }
+
+  // Slice 8: Undo/Redo stack
+  interface UndoEntry {
+    artifacts: Artifact[]
+    label: string
+    timestamp: number
+  }
+  const undoStack = useRef<UndoEntry[]>([])
+  const redoStack = useRef<UndoEntry[]>([])
+
+  function pushArtifactSnapshot(label: string) {
+    undoStack.current.push({ artifacts: [...artifacts], label, timestamp: Date.now() })
+    redoStack.current = []
+  }
+
+  function handleUndo() {
+    const entry = undoStack.current.pop()
+    if (!entry) { addToast('Nothing to undo', 'info'); return }
+    redoStack.current.push({ artifacts: [...artifacts], label: entry.label, timestamp: Date.now() })
+    setArtifacts(entry.artifacts)
+    const remainingIds = new Set(entry.artifacts.map(a => a.id))
+    setLayerSettings(prev => {
+      const cleaned: Record<string, LayerSettings> = {}
+      for (const [id, settings] of Object.entries(prev)) {
+        if (remainingIds.has(id)) cleaned[id] = settings
+      }
+      return cleaned
+    })
+    addToast(`Undid: ${entry.label}`, 'info')
+  }
+
+  function handleRedo() {
+    const entry = redoStack.current.pop()
+    if (!entry) { addToast('Nothing to redo', 'info'); return }
+    undoStack.current.push({ artifacts: [...artifacts], label: entry.label, timestamp: Date.now() })
+    setArtifacts(entry.artifacts)
+    const remainingIds = new Set(entry.artifacts.map(a => a.id))
+    setLayerSettings(prev => {
+      const cleaned: Record<string, LayerSettings> = {}
+      for (const [id, settings] of Object.entries(prev)) {
+        if (remainingIds.has(id)) cleaned[id] = settings
+      }
+      return cleaned
+    })
+    addToast(`Redid: ${entry.label}`, 'info')
+  }
+
+  const canUndo = undoStack.current.length > 0
+  const canRedo = redoStack.current.length > 0
+  const undoLabel = canUndo ? undoStack.current[undoStack.current.length - 1].label : null
+  const redoLabel = canRedo ? redoStack.current[redoStack.current.length - 1].label : null
+
+  const handleUndoRef = useRef<() => void>(() => {})
+  const handleRedoRef = useRef<() => void>(() => {})
+  handleUndoRef.current = handleUndo
+  handleRedoRef.current = handleRedo
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod) return
+      if (e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        handleUndoRef.current()
+      } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+        e.preventDefault()
+        handleRedoRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // Slice 1: map-first shell state
   type SidebarMode = 'layers' | 'discover' | 'query' | 'chain' | null
@@ -1866,6 +1938,7 @@ function App() {
           )
         }
 
+        pushArtifactSnapshot(`Import: ${updatedArtifact.name}`)
         setArtifacts((current) => [...current, updatedArtifact])
         setHistory((current) => [historyEvent, ...current])
         setSelectedArtifactId(artifactId)
@@ -2088,6 +2161,7 @@ function App() {
       artifactId,
     })
 
+    pushArtifactSnapshot(`Query: ${artifact.name}`)
     setArtifacts((current) => [...current, artifact])
     setHistory((current) => [eventRecord, ...current])
     setSelectedArtifactId(artifactId)
@@ -2150,6 +2224,7 @@ function App() {
         result.artifact.name = bufferName.trim() || `${selectedArtifact.name}_buffer`
         result.historyEvent.summary = `Buffer ${distance} ${bufferDistanceUnit} on ${selectedArtifact.name} → ${result.artifact.name}`
         
+        pushArtifactSnapshot(`Buffer: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2223,6 +2298,7 @@ function App() {
         // Override name with user-provided name
         result.artifact.name = centroidName.trim() || `${selectedArtifact.name}_centroid`
         
+        pushArtifactSnapshot(`Centroid: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2266,6 +2342,7 @@ function App() {
         result.artifact.name = convexHullName.trim() || `${selectedArtifact.name}_convex_hull`
         result.historyEvent.summary = `Convex hull on ${selectedArtifact.name} → ${result.artifact.name}`
 
+        pushArtifactSnapshot(`Convex hull: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2309,6 +2386,7 @@ function App() {
         result.artifact.name = envelopeName.trim() || `${selectedArtifact.name}_envelope`
         result.historyEvent.summary = `Envelope on ${selectedArtifact.name} → ${result.artifact.name}`
 
+        pushArtifactSnapshot(`Envelope: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2359,6 +2437,7 @@ function App() {
         result.artifact.name = simplifyName.trim() || `${selectedArtifact.name}_simplified`
         result.historyEvent.summary = `Simplify on ${selectedArtifact.name} → ${result.artifact.name}`
 
+        pushArtifactSnapshot(`Simplify: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2478,6 +2557,7 @@ function App() {
         }
         result.historyEvent.summary = `Reproject ${selectedArtifact.name} from ${reprojectSourceCrs} to ${reprojectTargetCrs} → ${result.artifact.name}`
         
+        pushArtifactSnapshot(`Reproject: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2561,6 +2641,7 @@ function App() {
       }
 
       if (result.artifact && result.historyEvent) {
+        pushArtifactSnapshot(`Clip: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2650,6 +2731,7 @@ function App() {
       }
 
       if (result.artifact && result.historyEvent) {
+        pushArtifactSnapshot(`Intersect: ${result.artifact.name}`)
         setArtifacts(current => [...current, result.artifact!])
         setHistory(current => [result.historyEvent!, ...current])
         setSelectedArtifactId(result.artifact!.id)
@@ -2780,6 +2862,7 @@ function App() {
         splitSelectionIntoNextCommit: shouldSplitSelectionIntoNextCommit,
       })
     }
+    pushArtifactSnapshot(`Operation: ${artifact.name}`)
     setArtifacts(current => {
       if (debugParams.logMapSync) {
         console.log('[App][operation-result] commit artifacts', {
@@ -3036,6 +3119,24 @@ function App() {
           </div>
         </div>
         <div className="actions" style={{ marginTop: 0, gap: 8 }}>
+          <button
+            className="secondary"
+            onClick={handleUndo}
+            disabled={!canUndo}
+            title={undoLabel ? `Undo: ${undoLabel}` : 'Nothing to undo'}
+            aria-label="Undo"
+          >
+            <Undo2 size={18} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+          <button
+            className="secondary"
+            onClick={handleRedo}
+            disabled={!canRedo}
+            title={redoLabel ? `Redo: ${redoLabel}` : 'Nothing to redo'}
+            aria-label="Redo"
+          >
+            <Redo2 size={18} strokeWidth={1.5} aria-hidden="true" />
+          </button>
           <button className="secondary" onClick={handleNewProject} aria-label="New project">
             <FilePlus size={18} strokeWidth={1.5} aria-hidden="true" />
             <span className="btn-text">New</span>
@@ -5155,7 +5256,7 @@ function App() {
             <h2 className="panel-title" style={{ marginTop: 0 }}>Plan</h2>
             <NLQueryPanel
               artifacts={artifacts}
-              addArtifact={(artifact) => setArtifacts(prev => [...prev, artifact])}
+              addArtifact={(artifact) => { pushArtifactSnapshot(`NL Plan: ${artifact.name}`); setArtifacts(prev => [...prev, artifact]) }}
               onPlanExecuted={(result) => {
                 if (result.success) {
                   setHistory(prev => [...prev, ...result.historyEvents])
