@@ -2,31 +2,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen, Undo2, Redo2, Download } from 'lucide-react'
 import type { DisplayTransformStatus } from './lib/spatial/display-transform'
 import maplibregl from 'maplibre-gl'
-import type { Artifact, BBox, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence, LayerSettings } from './types'
-import { sampleGeoJson } from './lib/sampleData'
+import type { Artifact, BBox, HistoryEvent, QueryPreview, SavedQuery, WarningRef } from './types'
 import { getDuckDb } from './lib/duckdb'
-import { formatTimestamp, inferGeometryType, getGeometryTypeSummary, getArtifactGeometryLabel, isFeatureCollection, makeId, formatCount } from './lib/utils'
+import { inferGeometryType, getArtifactGeometryLabel, isFeatureCollection, makeId } from './lib/utils'
 import { rowsToFeatureCollection } from './lib/wkb'
-import { saveProject, loadProject, hasSavedProject, clearSavedProject, createSavedQuery, reRegisterAllArtifactTables } from './lib/persistence'
-import { exportToGeoJson, exportToJson, triggerDownload, getArtifactExportOptions } from './lib/export'
-import { buildMaterializedQueryArtifact, buildQueryPreview, getQueryProvenanceStrengthPresentation } from './lib/query-semantics'
+import { saveProject, hasSavedProject, createSavedQuery } from './lib/persistence'
+import { getArtifactExportOptions } from './lib/export'
+import { buildMaterializedQueryArtifact, buildQueryPreview } from './lib/query-semantics'
 import { useArtifacts } from './hooks/useArtifacts'
 import { useUndoRedo } from './hooks/useUndoRedo'
 import { useMapSync } from './hooks/useMapSync'
 import { useImportExport, fetchFullGeometryFromTable } from './hooks/useImportExport'
 import type { ImportReviewState } from './hooks/useImportExport'
 import {
-  reconcileLayerSettings,
   toggleLayerVisibility as toggleLayerVisibilityPure,
   changeLayerOpacity as changeLayerOpacityPure,
   reorderLayer as reorderLayerPure,
 } from './lib/layer-controls'
-import { getActiveWarnings, getCurrentNotes, getDeletedQueryStatusMessage, getExportFailureStatusMessage, getExportSuccessStatusMessage, getHistoryDetailGroups, getLoadedQueryStatusMessage, getProvenanceNotes, getQueryRenderIssue, getQueryRunStatusMessage, getSeverityLabel, getSuggestedQueryArtifactName, getWarningRecoveryHint, getWarningScope, getWarningScopeLabel, isWarning, buildQueryHistoryEvent } from './lib/product-surface'
-import { getSpatialEngine, executeRegisteredSingleInputOperation, executeRegisteredAggregationOperation, executeClipOperation, executeIntersectOperation, executeRegisteredMeasurementOperation, executeAttributeJoinOperation, getJoinableFieldNames, getDisplayBounds, getDisplayFeatureCollection, getSingleInputOperationPresentation, getAggregationOperationPresentation, getMeasurementOperationPresentation, getSingleInputGeometrySupport, getSingleInputOperationInfoWarning, getMeasurementUnitDisclosure, getMeasurementUnitRefusalWarning, getAttributeJoinPresentation, getAttributeJoinOutputFieldSelection, getOperationSuccessStatusMessage, getTopologyRoleContext, isProjectedCrs, needsDisplayTransformation, validateForClip, validateForIntersect, validateForReproject } from './lib/spatial'
-import { OperationContractDisplay, OperationExecutionShell, OperationOutputSemantics, OperationSecondarySelector, OperationSourceSummary, OperationFieldCheckboxList, TypedWarningPanel, artifactSummaryText, getArtifactOutputKind, getArtifactOutputKindLabel, getOperationWarningTone } from './components/operation-ui'
+import { getCurrentNotes, getDeletedQueryStatusMessage, getLoadedQueryStatusMessage, getQueryRenderIssue, getQueryRunStatusMessage, getSeverityLabel, getSuggestedQueryArtifactName, getWarningRecoveryHint, getWarningScope, getWarningScopeLabel, isWarning, buildQueryHistoryEvent } from './lib/product-surface'
+import { getSpatialEngine, getDisplayBounds, needsDisplayTransformation } from './lib/spatial'
 import { BufferDialog, CentroidDialog, ConvexHullDialog, EnvelopeDialog, SimplifyDialog, DissolveDialog, ReprojectDialog, ClipDialog, IntersectDialog, JoinDialog, MeasureDialog } from './components/operations'
-import { NLQueryPanel } from './components/NLQueryPanel'
 import { DiscoveryPanel } from './components/DiscoveryPanel'
+import { RightPanel } from './components/RightPanel'
+import { BottomDock } from './components/BottomDock'
+import type { PlanExecutionResult } from './components/BottomDock'
 import type { DiscoveryResult as ApiDiscoveryResult } from './lib/discovery'
 import LayersPanel from './components/LayersPanel'
 
@@ -42,302 +41,17 @@ ORDER BY area_acres DESC`
 
 
 /**
- * Creates a derived artifact and history event from an operation result.
- * 
- * This is the shared core of geometry operations (buffer, centroid, etc.):
- * - Validates the artifact has spatial data
- * - Converts to operation input
- * - Executes the operation
- * - Creates the derived artifact with proper warnings
- * - Creates the history event
- * - Updates app state
- * 
- * Callers only need to provide the operation-specific execute function and details.
+ * Root application component — orchestrates state and delegates rendering to extracted panels.
+ *
+ * Architecture:
+ *  - RightPanel: artifact details, history timeline, CRS/provenance display (1,767-2,200 inline → ~10 lines)
+ *  - BottomDock: command bar, NL plan sheet, empty state, SQL/results/table tabs (~900 inline → ~2 lines)
+ *  - App retains: map canvas, topbar, sidebar drawer, operation dialogs, global keyboard shortcuts,
+ *    and all shared state (artifacts, history, selection, query preview, materialization naming).
+ *
+ * Props for extracted components are assembled in `rightPanelProps` and `bottomDockProps` objects
+ * immediately before the return statement.
  */
-import type { GeometryOperationInput, GeometryOperationResult } from './lib/spatial'
-
-interface OperationExecutionResult {
-  artifact?: Artifact
-  historyEvent?: HistoryEvent
-  error?: string
-}
-
-/**
- * Wrapper that delegates to the shared operation helper from lib/spatial.
- * This preserves the same interface while using the canonical shared implementation.
- */
-async function executeGeometryOperation(
-  sourceArtifact: Artifact,
-  operationName: string,
-  _operationFormat: string,
-  executeOperation: (input: GeometryOperationInput) => Promise<GeometryOperationResult>,
-  getDetails: (sourceArtifact: Artifact) => Record<string, unknown>
-): Promise<OperationExecutionResult> {
-  return executeRegisteredSingleInputOperation({
-    operationId: operationName === 'dissolve' ? 'dissolve-global' : operationName,
-    sourceArtifact,
-    executeOperation,
-    getDetails,
-  })
-}
-
-/**
- * Get human-readable label for CRS provenance source
- */
-function getCrsProvenanceLabel(source: CrsProvenance['source']): string {
-  switch (source) {
-    case 'import-metadata':
-      return 'imported metadata'
-    case 'operation-inherited':
-      return 'inherited from source layer'
-    case 'operation-derived':
-      return 'derived by operation'
-    case 'user-assigned':
-      return 'user-assigned'
-    case 'auto-detected':
-      return 'auto-detected'
-    case 'display-transform':
-      return 'display transform'
-    default:
-      return 'unknown'
-  }
-}
-
-function getCrsConfidenceLabel(confidence: CrsConfidence): string {
-  switch (confidence) {
-    case 'known':
-      return 'known CRS'
-    case 'unknown':
-      return 'unknown CRS'
-    case 'missing':
-      return 'missing CRS'
-    default:
-      return confidence
-  }
-}
-
-/**
- * Check if artifact needs display transformation for map rendering
- * Returns the display CRS if transformation is needed, null otherwise
- */
-function getDisplayCrsIfNeeded(artifact: Artifact): string | null {
-  if (artifact.crsProvenance?.displayTransform?.displayCrs) {
-    return artifact.crsProvenance.displayTransform.displayCrs
-  }
-  if (!artifact.spatial) return null
-  if (!artifact.crs || artifact.crs === 'unknown') return null
-  if (isProjectedCrs(artifact.crs)) {
-    return 'EPSG:4326' // Display uses WGS84
-  }
-  return null
-}
-
-/**
- * Build CRS provenance for derived artifacts from operations
- */
-function getDisplayStatusMeta(status: DisplayTransformStatus): {
-  badge: 'display only' | 'display fallback'
-  message: string
-  warning?: WarningRef
-  provenanceWarning?: string
-} | null {
-  if (status === 'transformed') {
-    return {
-      badge: 'display only',
-      message: 'Display normalized to EPSG:4326 for map only; stored CRS metadata is unchanged',
-    }
-  }
-
-  if (status === 'fallback_runtime_unavailable') {
-    return {
-      badge: 'display fallback',
-      message: 'Display framing fell back while targeting EPSG:4326 because transform runtime was unavailable; stored CRS metadata is unchanged',
-      warning: {
-        id: 'display_transform_fallback_runtime',
-        code: 'DISPLAY_TRANSFORM_FALLBACK',
-        severity: 'caution',
-        scope: 'active',
-        title: 'Display transform fallback',
-        message: 'Display framing fell back because transform runtime was unavailable. Stored CRS metadata is unchanged, but map framing may be unreliable.',
-      },
-      provenanceWarning: 'Display framing fell back because transform runtime was unavailable.',
-    }
-  }
-
-  if (status === 'fallback_transform_failed') {
-    return {
-      badge: 'display fallback',
-      message: 'Display framing fell back while targeting EPSG:4326 because coordinate transformation failed; stored CRS metadata is unchanged',
-      warning: {
-        id: 'display_transform_fallback_transform',
-        code: 'DISPLAY_TRANSFORM_FALLBACK',
-        severity: 'caution',
-        scope: 'active',
-        title: 'Display transform fallback',
-        message: 'Display framing fell back because coordinate transformation failed. Stored CRS metadata is unchanged, but map framing may be unreliable.',
-      },
-      provenanceWarning: 'Display framing fell back because coordinate transformation failed.',
-    }
-  }
-
-  return null
-}
-
-function getArtifactCrsWarning(artifact: Artifact, operationNoun: string): WarningRef | null {
-  if (!artifact.crs || artifact.crs === 'unknown') {
-    return {
-      id: `${artifact.id}-${operationNoun}-crs-warning`,
-      code: artifact.crs ? 'CRS_UNKNOWN' : 'CRS_MISSING',
-      severity: 'caution',
-      scope: 'active',
-      title: 'Stored CRS is not verified',
-      message: `${artifact.name} does not currently verify its stored CRS. ${operationNoun} results should be treated cautiously unless the coordinates are known and the contract allows this path.`,
-    }
-  }
-  return null
-}
-
-function getDissolveGeometryWarning(artifact: Artifact): WarningRef | null {
-  const geometrySupport = getSingleInputGeometrySupport('dissolve-grouped-v1', artifact)
-  if (!geometrySupport || geometrySupport.sourceAllowed || !artifact.geometryType) return null
-
-  return {
-    id: `${artifact.id}-dissolve-geometry-warning`,
-    code: 'UNSUPPORTED_GEOMETRY',
-    severity: 'caution',
-    scope: 'active',
-    title: 'Non-standard geometry type',
-    message: geometrySupport.unsupportedMessage,
-  }
-}
-
-function getSingleInputDialogContract(operationId: 'buffer' | 'centroid' | 'convex-hull-v1' | 'envelope-v1' | 'simplify-v1' | 'dissolve-grouped-v1' | 'reproject' | 'area-v1' | 'perimeter-v1' | 'compactness-v1', artifact: Artifact) {
-  const presentation = getSingleInputOperationPresentation(operationId)
-  const aggregationPresentation = operationId === 'dissolve-grouped-v1' ? getAggregationOperationPresentation(operationId) : null
-  const measurementPresentation = operationId === 'area-v1' || operationId === 'perimeter-v1' || operationId === 'compactness-v1' ? getMeasurementOperationPresentation(operationId) : null
-  const geometrySupport = getSingleInputGeometrySupport(operationId, artifact)
-  const infoWarning = getSingleInputOperationInfoWarning(operationId)
-  const measurementUnitDisclosure = operationId === 'area-v1' || operationId === 'perimeter-v1' || operationId === 'compactness-v1'
-    ? getMeasurementUnitDisclosure(operationId)
-    : null
-  const measurementUnitWarning = operationId === 'area-v1' || operationId === 'perimeter-v1' || operationId === 'compactness-v1'
-    ? getMeasurementUnitRefusalWarning(operationId, artifact)
-    : null
-  return { presentation, aggregationPresentation, measurementPresentation, geometrySupport, infoWarning, measurementUnitDisclosure, measurementUnitWarning }
-}
-
-function toPanelWarnings(warnings: WarningRef[]) {
-  return warnings.map((warning) => ({
-    title: warning.title,
-    message: warning.message,
-    tone: getOperationWarningTone(warning),
-  }))
-}
-
-function buildInfoWarningRef(artifact: Artifact, suffix: string, infoWarning: ReturnType<typeof getSingleInputOperationInfoWarning>): WarningRef | null {
-  if (!infoWarning) return null
-  return {
-    id: `${artifact.id}-${suffix}-info`,
-    code: 'LIMITED_SUPPORT_ENVELOPE',
-    severity: infoWarning.severity,
-    scope: 'active',
-    title: infoWarning.title,
-    message: infoWarning.message,
-  }
-}
-
-function getAttributeJoinKeyPriority(field: string): number {
-  const normalized = field.trim().toLowerCase()
-  if (!normalized) return 0
-  if (normalized === 'id') return 100
-  if (normalized === 'join_id') return 95
-  if (normalized.endsWith('_id')) return 90
-  if (normalized.includes('id')) return 70
-  if (normalized === 'name') return 50
-  if (normalized.endsWith('_name')) return 45
-  if (normalized.includes('name')) return 35
-  if (normalized === 'category' || normalized.endsWith('_code') || normalized.endsWith('_key')) return 30
-  if (normalized === '_featureindex') return -100
-  return 10
-}
-
-function getPreferredAttributeJoinKeys(leftFields: string[], rightFields: string[]): { sourceKey: string; secondaryKey: string } {
-  const rightFieldSet = new Set(rightFields)
-  const sharedFields = leftFields.filter((field) => rightFieldSet.has(field))
-  const rankedSharedFields = [...sharedFields].sort((a, b) => {
-    const scoreDiff = getAttributeJoinKeyPriority(b) - getAttributeJoinKeyPriority(a)
-    return scoreDiff !== 0 ? scoreDiff : a.localeCompare(b)
-  })
-  const preferredSharedField = rankedSharedFields[0]
-  if (preferredSharedField) {
-    return {
-      sourceKey: preferredSharedField,
-      secondaryKey: preferredSharedField,
-    }
-  }
-
-  const rankedLeftFields = [...leftFields].sort((a, b) => {
-    const scoreDiff = getAttributeJoinKeyPriority(b) - getAttributeJoinKeyPriority(a)
-    return scoreDiff !== 0 ? scoreDiff : a.localeCompare(b)
-  })
-  const rankedRightFields = [...rightFields].sort((a, b) => {
-    const scoreDiff = getAttributeJoinKeyPriority(b) - getAttributeJoinKeyPriority(a)
-    return scoreDiff !== 0 ? scoreDiff : a.localeCompare(b)
-  })
-
-  return {
-    sourceKey: rankedLeftFields[0] ?? '',
-    secondaryKey: rankedRightFields[0] ?? '',
-  }
-}
-
-function getDefaultAttributeJoinSelectedFields(leftFields: string[], rightFields: string[], secondaryKey: string): string[] {
-  const selectableFields = rightFields.filter((field) => field !== secondaryKey)
-  const collisionFree = selectableFields.filter((field) => !leftFields.includes(field))
-  if (collisionFree[0]) return [collisionFree[0]]
-  if (selectableFields[0]) return [selectableFields[0]]
-  return []
-}
-
-function getAttributeJoinDialogDefaults(selectedArtifact: Artifact, candidateArtifact: Artifact | null): {
-  artifactId: string;
-  sourceKey: string;
-  secondaryKey: string;
-  selectedFields: string[];
-  outputName: string;
-} {
-  const leftFields = getJoinableFieldNames(selectedArtifact)
-  const rightFields = candidateArtifact ? getJoinableFieldNames(candidateArtifact) : []
-  const preferredKeys = getPreferredAttributeJoinKeys(leftFields, rightFields)
-  return {
-    artifactId: candidateArtifact?.id ?? '',
-    sourceKey: preferredKeys.sourceKey,
-    secondaryKey: preferredKeys.secondaryKey,
-    selectedFields: getDefaultAttributeJoinSelectedFields(leftFields, rightFields, preferredKeys.secondaryKey),
-    outputName: `${selectedArtifact.name}_attribute_join`,
-  }
-}
-
-function AccordionSection({ title, defaultOpen, children, badge }: {
-  title: string
-  defaultOpen?: boolean
-  badge?: string | number
-  children: React.ReactNode
-}) {
-  return (
-    <details open={defaultOpen} style={{ marginBottom: 8 }}>
-      <summary style={{ cursor: 'pointer', padding: '8px 0', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8b949e', fontWeight: 600, listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 10, transition: 'transform 0.15s' }}>▸</span>
-        {title}
-        {badge && <span className="badge" style={{ marginLeft: 'auto' }}>{badge}</span>}
-      </summary>
-      <div style={{ paddingLeft: 0, paddingTop: 4 }}>
-        {children}
-      </div>
-    </details>
-  )
-}
-
 function App() {
   const debugParams = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -362,7 +76,6 @@ function App() {
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([])
   const [pendingPostCommitSelectedArtifactId, setPendingPostCommitSelectedArtifactId] = useState<string | null>(null)
   const [bottomTab, setBottomTab] = useState<BottomTab>('table')
-  const [bottomDockExpanded, setBottomDockExpanded] = useState(false)
   const [sql, setSql] = useState(SAMPLE_SQL)
   const [queryPreview, setQueryPreview] = useState<QueryPreview | null>(null)
   const [queryError, setQueryError] = useState<string | null>(null)
@@ -405,7 +118,7 @@ function App() {
   handleUndoRef.current = handleUndo
   handleRedoRef.current = handleRedo
 
-  const commandInputRef = useRef<HTMLInputElement>(null)
+
   const handleOpenProjectRef = useRef<() => void>(() => {})
   const handleNewProjectRef = useRef<() => void>(() => {})
   const toggleSidebarRef = useRef<(mode: SidebarMode) => void>(() => {})
@@ -441,7 +154,7 @@ function App() {
         handleNewProjectRef.current()
       } else if (e.key === 'k') {
         e.preventDefault()
-        commandInputRef.current?.focus()
+        document.querySelector<HTMLInputElement>('.command-bar-input')?.focus()
       } else if (e.key === 'b') {
         e.preventDefault()
         toggleSidebarRef.current('layers')
@@ -464,7 +177,6 @@ function App() {
   const [activeSidebar, setActiveSidebar] = useState<SidebarMode>(null)
   const [rightPanelOpen, setRightPanelOpen] = useState(false)
   const [commandInput, setCommandInput] = useState('')
-  const [commandFocused, setCommandFocused] = useState(false)
   const importFileRef = useRef<HTMLInputElement>(null)
 
   // Slice 6c: Discovery prefix routing state
@@ -515,18 +227,7 @@ function App() {
     }
   }
 
-  function applyExampleQuery(example: string) {
-    setCommandInput(example)
-    handleCommandChange(example)
-  }
 
-  const commandExamples = [
-    'Buffer the parcels by 500 feet',
-    'Clip parcels to Butte County and calculate area',
-    'Show me what\'s near the rivers',
-    'Join ownership to parcels by APN',
-    'Find the median income by census tract',
-  ]
 
   // Project persistence state
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -568,26 +269,7 @@ function App() {
   
   const mapNodeRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const tableContainerRef = useRef<HTMLDivElement | null>(null)
-  const artifactsRef = useRef<Artifact[]>([])
-  const selectedArtifactIdRef = useRef<string | null>(null)
-  const pendingPostCommitSelectedArtifactIdRef = useRef<string | null>(null)
-
   selectedArtifactRef.current = selectedArtifact
-
-  // derived values for operation dialogs are now in the dialog components
-
-  useEffect(() => {
-    artifactsRef.current = artifacts
-  }, [artifacts])
-
-  useEffect(() => {
-    selectedArtifactIdRef.current = selectedArtifactId
-  }, [selectedArtifactId])
-
-  useEffect(() => {
-    pendingPostCommitSelectedArtifactIdRef.current = pendingPostCommitSelectedArtifactId
-  }, [pendingPostCommitSelectedArtifactId])
 
   useEffect(() => {
     if (!pendingPostCommitSelectedArtifactId) return
@@ -805,19 +487,6 @@ function App() {
     })
   }, [selectedArtifact, selectedRowIndex])
 
-  // Scroll selected row into view when selectedRowIndex changes
-  useEffect(() => {
-    if (selectedRowIndex === null || !tableContainerRef.current) return
-    
-    const container = tableContainerRef.current
-    const rows = container.querySelectorAll('tbody tr')
-    const targetRow = rows[selectedRowIndex]
-    
-    if (targetRow) {
-      targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }
-  }, [selectedRowIndex])
-
   useEffect(() => {
     setSelectedArtifactDisplayStatus(null)
     setSelectedRowIndex(null)
@@ -980,7 +649,6 @@ function App() {
         }))
         setQueryHasRunSuccessfully(true)
         setBottomTab('results')
-        setBottomDockExpanded(true)
         setStatusMessage(getQueryRunStatusMessage({
           rowCount: rows.length,
           matchedArtifactCount: sourceArtifacts.length,
@@ -1237,49 +905,83 @@ function App() {
     debugParams,
   }), [artifacts, selectedArtifact, selectedArtifactId, debugParams])
 
-  const rowsForSelected = useMemo(() => {
-    if (!selectedArtifact) return []
-    if (isFeatureCollection(selectedArtifact.data)) {
-      return selectedArtifact.data.features.map((feature, featureIndex) => ({
-        _featureIndex: featureIndex,
-        ...(feature.properties ?? {}),
-        geometry: feature.geometry?.type ?? null,
-      }))
-    }
-    if (selectedArtifact.tableRows?.length) {
-      return selectedArtifact.tableRows
-    }
-    if (Array.isArray(selectedArtifact.data)) {
-      return selectedArtifact.data as Record<string, unknown>[]
-    }
-    return []
-  }, [selectedArtifact])
-
-  const selectedArtifactOriginEvent = selectedArtifact
-    ? history.find((event) => event.id === selectedArtifact.originEventId) ?? null
-    : null
-  const selectedArtifactOutputKind = selectedArtifact ? getArtifactOutputKind(selectedArtifact) : null
   const selectedArtifactExportOptions = useMemo(
     () => (selectedArtifact ? getArtifactExportOptions(selectedArtifact) : []),
     [selectedArtifact],
   )
-  const queryPreviewMaterializedOutputKind = queryPreview?.materialization?.outputKind ?? null
-  const queryPreviewProvenancePresentation = queryPreview?.materialization
-    ? getQueryProvenanceStrengthPresentation(queryPreview.materialization.provenanceStrength)
-    : null
-  const selectedFeatureGeometry = useMemo(() => {
-    if (!selectedArtifact || !isFeatureCollection(selectedArtifact.data) || selectedRowIndex === null) return null
-    const feature = selectedArtifact.data.features[selectedRowIndex]
-    return feature?.geometry ?? null
-  }, [selectedArtifact, selectedRowIndex])
-  const selectedFeatureProperties = useMemo(() => {
-    if (!selectedArtifact || !isFeatureCollection(selectedArtifact.data) || selectedRowIndex === null) return null
-    return selectedArtifact.data.features[selectedRowIndex]?.properties ?? null
-  }, [selectedArtifact, selectedRowIndex])
-  const selectedHistoryEvent = selectedHistoryEventId
-    ? history.find((event) => event.id === selectedHistoryEventId) ?? null
-    : null
 
+  // Props for extracted RightPanel component (handles its own rendering of details/history tabs)
+  const rightPanelProps = {
+    selectedArtifact,
+    artifacts,
+    history,
+    selectedHistoryEventId,
+    rightPanelOpen,
+    selectedRowIndex,
+    onClose: () => setRightPanelOpen(false),
+    onOpen: () => setRightPanelOpen(true),
+    onImportFile: () => importFileRef.current?.click(),
+    onLoadSample: openSampleImport,
+    onSelectHistoryEvent: setSelectedHistoryEventId,
+    statusMessage,
+    rightPanelTab,
+    setRightPanelTab,
+    selectedArtifactDisplayStatus,
+  }
+
+  // Props for extracted BottomDock component (handles command bar, NL plan sheet, empty state, and bottom dock tabs)
+  const bottomDockProps = {
+    commandInput,
+    onCommandChange: handleCommandChange,
+    onCommandSubmit: (val: string) => {
+      if (val.startsWith('/')) setActiveSidebar('query')
+      else if (val.startsWith('@')) setActiveSidebar('discover')
+      else if (val.trim()) setActiveSidebar('chain')
+    },
+    onCommandClear: () => { setCommandInput(''); setActiveSidebar(null) },
+    artifacts,
+    activeSidebar,
+    onCloseSidebar: () => setActiveSidebar(null),
+    onOpenSidebar: (mode: 'query' | 'discover' | 'chain') => setActiveSidebar(mode),
+    addArtifact: (artifact: Artifact) => {
+      pushArtifactSnapshot(`NL Plan: ${artifact.name}`)
+      setArtifacts(prev => [...prev, artifact])
+    },
+    onPlanExecuted: (result: PlanExecutionResult) => {
+      if (result.success) {
+        setHistory(prev => [...prev, ...result.historyEvents])
+        addToast(`Executed plan: ${result.artifacts.length} layer(s) created`, 'success')
+        if (result.artifacts[0]) setSelectedArtifactId(result.artifacts[0].id)
+      } else {
+        addToast(`Plan failed: ${result.errors.join(', ')}`, 'error')
+      }
+    },
+    bottomTab,
+    setBottomTab: (tab: string) => setBottomTab(tab as BottomTab),
+    selectedArtifact,
+    selectedRowIndex,
+    onSelectRow: setSelectedRowIndex,
+    queryPreview,
+    addToast,
+    sql,
+    onSqlChange: setSql,
+    queryError,
+    queryRunning,
+    queryHasRunSuccessfully,
+    onRunQuery: runQuery,
+    onOpenSaveQueryDialog: () => setShowSaveQueryDialog(true),
+    sampleSql: SAMPLE_SQL,
+    materializeStage,
+    setMaterializeStage,
+    derivedArtifactName,
+    setDerivedArtifactName,
+    materializing,
+    initiateMaterialization,
+    confirmMaterialize,
+    onSelectArtifactId: setSelectedArtifactId,
+    onImportFile: () => importFileRef.current?.click(),
+    onLoadSample: openSampleImport,
+  }
 
   return (
     <div className="app-shell">
@@ -1764,830 +1466,9 @@ function App() {
         )}
       </main>
 
-      <aside className={`right-panel ${rightPanelOpen ? 'open' : ''}`}>
-        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            className={`right-panel-tab ${rightPanelTab === 'details' ? 'active' : ''}`}
-            onClick={() => setRightPanelTab('details')}
-          >
-            Details
-          </button>
-          <button
-            className={`right-panel-tab ${rightPanelTab === 'history' ? 'active' : ''}`}
-            onClick={() => setRightPanelTab('history')}
-          >
-            History{history.length > 0 ? ` (${history.length})` : ''}
-          </button>
-          <button
-            className="secondary"
-            style={{ padding: '2px 8px', fontSize: 12 }}
-            onClick={() => setRightPanelOpen(false)}
-          >
-            ×
-          </button>
-        </div>
-        {rightPanelTab === 'details' && !selectedArtifact && (
-          <AccordionSection title="Project Summary" defaultOpen={true} badge={formatCount(artifacts.length, 'layer')}>
-            <div className="small muted" style={{ marginBottom: 8 }}>{statusMessage}</div>
-            <div className="actions" style={{ marginTop: 0, gap: 8 }}>
-              <label className="secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                Import data
-                <input className="input-file" type="file" accept=".json,.geojson,.parquet,.geoparquet" onChange={handleFileImport} style={{ display: 'none' }} />
-              </label>
-              <button className="secondary" onClick={openSampleImport}>Load sample</button>
-            </div>
-          </AccordionSection>
-        )}
-        {rightPanelTab === 'details' && selectedArtifact && (
-          <>
-            {/* Focused Feature accordion — shown at top when a feature is selected */}
-            {selectedRowIndex !== null && selectedArtifact.spatial && isFeatureCollection(selectedArtifact.data) && (
-              <AccordionSection title="Focused Feature" defaultOpen={true} badge={`#${selectedRowIndex + 1}`}>
-                <div className="card" style={{ background: '#0f172a', border: '1px solid #1e3a5f' }}>
-                  {selectedFeatureGeometry && (
-                    <div className="small muted" style={{ marginTop: 6 }}>
-                      Geometry: {selectedFeatureGeometry.type}
-                    </div>
-                  )}
-                  {selectedFeatureProperties && (
-                    <div style={{ marginTop: 8 }}>
-                      <div className="small" style={{ color: '#94a3b8' }}>Properties</div>
-                      <div style={{ marginTop: 4, fontSize: 12, fontFamily: 'monospace' }}>
-                        {Object.entries(selectedFeatureProperties).map(([key, value]) => (
-                          <div key={key} style={{ color: '#cbd5e1' }}>
-                            {key}: {String(value)}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {!selectedFeatureProperties && (
-                    <div className="small muted" style={{ marginTop: 6 }}>
-                      No properties on this feature.
-                    </div>
-                  )}
-                </div>
-              </AccordionSection>
-            )}
+      <RightPanel {...rightPanelProps} />
 
-            {/* Overview accordion */}
-            <AccordionSection title="Overview" defaultOpen={selectedRowIndex === null}>
-              <div className="card">
-                <div className="row">
-                  <strong>{selectedArtifact.name}</strong>
-                  <span className={`badge ${selectedArtifact.kind}`}>{selectedArtifact.kind}</span>
-                </div>
-                <div className="small muted" style={{ marginTop: 8 }}>{selectedArtifact.format}</div>
-    <div className="small muted" style={{ marginTop: 4 }}>
-                  {selectedArtifact.rowCount ?? '?'} rows · {getArtifactGeometryLabel(selectedArtifact)}
-                </div>
-                <div className="small" style={{ marginTop: 6, color: '#cbd5e1' }}>
-                  Output kind: <strong>{selectedArtifactOutputKind ? getArtifactOutputKindLabel(selectedArtifactOutputKind) : 'unknown output'}</strong>
-                </div>
-                {/* Compact CRS metadata block - keep stored CRS, confidence, provenance, and display CRS distinct */}
-                <div className="small" style={{ marginTop: 8, padding: '8px 10px', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ color: '#94a3b8' }}>Stored CRS:</span>
-                    <strong>{selectedArtifact.crs ?? 'unknown'}</strong>
-                    {selectedArtifact.crsProvenance && (
-                      <span className={`badge ${selectedArtifact.crsProvenance.confidence}`}>
-                        {getCrsConfidenceLabel(selectedArtifact.crsProvenance.confidence)}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                    <span style={{ color: '#94a3b8' }}>CRS provenance:</span>
-                    <span style={{ color: '#cbd5e1' }}>{selectedArtifact.crsProvenance ? getCrsProvenanceLabel(selectedArtifact.crsProvenance.source) : 'unknown'}</span>
-                  </div>
-                  {/* Show display CRS info when display normalization is applied */}
-                  {getDisplayCrsIfNeeded(selectedArtifact) && (() => {
-                    const displayMeta = selectedArtifactDisplayStatus ? getDisplayStatusMeta(selectedArtifactDisplayStatus) : null
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, color: '#fbbf24', fontSize: '11px', flexWrap: 'wrap' }}>
-                        <span>↻</span>
-                        <span>
-                          Display CRS: {getDisplayCrsIfNeeded(selectedArtifact)} (map only)
-                        </span>
-                        <span style={{ color: '#64748b' }}>·</span>
-                        <span>
-                          {displayMeta?.message ?? 'Display normalization changes map rendering only. Stored CRS metadata is unchanged.'}
-                        </span>
-                      </div>
-                    )
-                  })()}
-                </div>
-                {selectedArtifact.renderIssue && (
-                  <div className="card danger" style={{ marginTop: 10 }}>
-                    <strong>Render issue</strong>
-                    <div className="small muted" style={{ marginTop: 6 }}>{selectedArtifact.renderIssue}</div>
-                    <div className="small" style={{ marginTop: 6 }}>The layer still exists and remains queryable/tabular. Only the current map adaptation failed.</div>
-                  </div>
-                )}
-              </div>
-            </AccordionSection>
-
-            {/* Issues accordion — combines Notes, Provenance notes, Display runtime, and Warnings */}
-            {(() => {
-              const hasBlockingWarnings = selectedArtifact.warnings.some(isWarning) && getActiveWarnings(selectedArtifact.warnings).length > 0
-              const noteCount = getCurrentNotes(selectedArtifact.warnings).length
-              const provNoteCount = getProvenanceNotes(selectedArtifact.warnings).length
-              const warningCount = getActiveWarnings(selectedArtifact.warnings).length
-              const displayWarning = selectedArtifactDisplayStatus && getDisplayStatusMeta(selectedArtifactDisplayStatus)?.warning
-              const badgeParts: string[] = []
-              if (warningCount > 0) badgeParts.push(formatCount(warningCount, 'warning'))
-              if (noteCount > 0) badgeParts.push(formatCount(noteCount, 'note'))
-              const hasAnyIssues = noteCount > 0 || provNoteCount > 0 || displayWarning || selectedArtifact.warnings.some(isWarning)
-              return (
-                <AccordionSection title="Issues" defaultOpen={hasBlockingWarnings} badge={badgeParts.join(', ') || undefined}>
-                  {!hasAnyIssues && (
-                    <div className="card muted">No issues detected.</div>
-                  )}
-                  {/* Current notes */}
-                  {noteCount > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <div className="small" style={{ color: '#93c5fd', marginBottom: 8 }}>Notes</div>
-                      <div className="artifact-list">
-                        {getCurrentNotes(selectedArtifact.warnings).map((warning) => (
-                          <div key={warning.id} className="card" style={{ borderColor: '#1e3a5f', background: '#0a1525' }}>
-                            <div className="row">
-                              <strong>{warning.title}</strong>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                <span className="badge info">{getSeverityLabel(warning)}</span>
-                                <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                              </div>
-                            </div>
-                            <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                            <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {/* Provenance notes */}
-                  {provNoteCount > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <div className="small" style={{ color: '#cbd5e1', marginBottom: 8 }}>Provenance notes</div>
-                      <div className="artifact-list">
-                        {getProvenanceNotes(selectedArtifact.warnings).map((warning) => (
-                          <div key={warning.id} className="card" style={{ borderColor: '#334155', background: '#111827' }}>
-                            <div className="row">
-                              <strong>{warning.title}</strong>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                <span className="badge info">{getSeverityLabel(warning)}</span>
-                                <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                              </div>
-                            </div>
-                            <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                            <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {/* Display runtime warning */}
-                  {displayWarning && (
-                    <div style={{ marginBottom: 12 }}>
-                      <div className="small" style={{ marginBottom: 8 }}>Display runtime</div>
-                      <div className="artifact-list">
-                        <div className="card">
-                          <div className="row">
-                            <strong>{displayWarning.title}</strong>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <span className="badge caution">caution</span>
-                              <span className="badge active">active</span>
-                            </div>
-                          </div>
-                          <div className="small muted" style={{ marginTop: 6 }}>{displayWarning.message}</div>
-                          <div className="small" style={{ marginTop: 6 }}>This reflects the current map-framing runtime, not a persisted change to the layer itself.</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {/* Active warnings (caution/serious/blocking) */}
-                  {selectedArtifact.warnings.some(isWarning) && (
-                    <div>
-                      <div className="small" style={{ marginBottom: 8 }}>Warnings</div>
-                      <div className="artifact-list">
-                        {selectedArtifact.warnings.filter(isWarning).map((warning) => (
-                          <div key={warning.id} className="card">
-                            <div className="row">
-                              <strong>{warning.title}</strong>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                <span className={`badge ${warning.severity}`}>{getSeverityLabel(warning)}</span>
-                                <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                              </div>
-                            </div>
-                            <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                            <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </AccordionSection>
-              )
-            })()}
-
-            {/* Lineage accordion — auto-expand for derived artifacts */}
-            <AccordionSection title="Lineage" defaultOpen={selectedArtifact.kind === 'derived'}>
-              <div className="card">
-                <div className="row">
-                  <strong>Lineage</strong>
-                  <span className="badge">{selectedArtifact.kind}</span>
-                </div>
-                {selectedArtifact.kind === 'source' ? (
-                  <>
-                    <div className="small" style={{ marginTop: 8 }}>Imported into the workspace as a source layer.</div>
-                    {selectedArtifactOriginEvent && (
-                      <div className="small muted" style={{ marginTop: 6 }}>
-                        Created by: import event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="small" style={{ marginTop: 8 }}>
-                      Upstream layer(s): {selectedArtifact.inputArtifactIds?.map((id) => artifacts.find((a) => a.id === id)?.name ?? id).join(', ') || 'unknown upstream layer'}
-                    </div>
-                    {selectedArtifactOriginEvent && (
-                      <>
-                        <div className="small muted" style={{ marginTop: 6 }}>Created by: {selectedArtifactOriginEvent.type} event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}</div>
-                        <div className="small" style={{ marginTop: 8, color: '#cbd5e1' }}>
-                          This layer's stored truth comes from the output of that event. Input assumptions and provenance notes remain inspectable in the event details below.
-                        </div>
-                        {getHistoryDetailGroups(selectedArtifactOriginEvent.details).length > 0 && (
-                          <div className="card" style={{ marginTop: 10 }}>
-                            <strong className="small">Event-derived lineage facts</strong>
-    <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
-                              {getHistoryDetailGroups(selectedArtifactOriginEvent.details).map((group) => (
-                                <div key={group.title}>
-                                  <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
-                                  <div style={{ display: 'grid', gap: 6 }}>
-                                    {group.rows.map(({ key, label, renderedValue }) => (
-                                      <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 8 }}>
-                                        <span style={{ color: '#94a3b8' }}>{label}</span>
-                                        <span>{renderedValue}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {'sql' in selectedArtifactOriginEvent.details && typeof selectedArtifactOriginEvent.details.sql === 'string' && (
-                          <pre className="card code-block">
-{String(selectedArtifactOriginEvent.details.sql)}
-                          </pre>
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
-            </AccordionSection>
-          </>
-        )}
-        {rightPanelTab === 'history' && (
-          <div style={{ overflowY: 'auto', flex: 1 }}>
-            {history.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
-                <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.5 }}>⏱</div>
-                <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-                  No operations yet. Run a geoprocessing operation to see history here.
-                </div>
-              </div>
-            )}
-            {history.length > 0 && (
-              <div className="history-list">
-                {history.map((event) => (
-                  <button
-                    key={event.id}
-                    className={`card ${selectedHistoryEventId === event.id ? 'selected' : ''}`}
-                    style={{ textAlign: 'left' }}
-                    onClick={() => setSelectedHistoryEventId(event.id)}
-                  >
-                    <div className="row"><strong>{event.summary}</strong><span className="badge">{event.type}</span></div>
-                    <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(event.timestamp)}</div>
-                    <div className="row" style={{ marginTop: 6, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                      {getActiveWarnings(event.warnings).length > 0 && (
-                        <span className="badge warning">{formatCount(getActiveWarnings(event.warnings).length, 'warning')}</span>
-                      )}
-                      {getCurrentNotes(event.warnings).length > 0 && (
-                        <span className="badge info">{formatCount(getCurrentNotes(event.warnings).length, 'note')}</span>
-                      )}
-                      {getProvenanceNotes(event.warnings).length > 0 && (
-                        <span className="badge historical">{formatCount(getProvenanceNotes(event.warnings).length, 'provenance note')}</span>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {selectedHistoryEvent && (
-              <div style={{ marginTop: 16 }}>
-                <div className="small" style={{ color: '#8b949e', marginBottom: 8, fontWeight: 600 }}>Event detail</div>
-                <div className="card">
-                  <div className="row">
-                    <strong>{selectedHistoryEvent.summary}</strong>
-                    <span className="badge">{selectedHistoryEvent.type}</span>
-                  </div>
-                  <div className="small muted" style={{ marginTop: 6 }}>{formatTimestamp(selectedHistoryEvent.timestamp)}</div>
-                  <div className="small" style={{ marginTop: 10 }}>
-                    Inputs: {selectedHistoryEvent.inputArtifactIds.length
-                      ? selectedHistoryEvent.inputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
-                      : 'none'}
-                  </div>
-                  <div className="small" style={{ marginTop: 6 }}>
-                    Outputs: {selectedHistoryEvent.outputArtifactIds.length
-                      ? selectedHistoryEvent.outputArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ')
-                      : 'none'}
-                  </div>
-                  {getHistoryDetailGroups(selectedHistoryEvent.details).length > 0 && (
-                    <div className="card" style={{ marginTop: 12 }}>
-                      <strong className="small">Structured event details</strong>
-                      <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
-                        {getHistoryDetailGroups(selectedHistoryEvent.details).map((group) => (
-                          <div key={group.title}>
-                            <div className="small" style={{ color: '#93c5fd', marginBottom: 6 }}>{group.title}</div>
-                            <div style={{ display: 'grid', gap: 6 }}>
-                              {group.rows.map(({ key, label, renderedValue }) => (
-                                <div key={key} className="small" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8 }}>
-                                  <span style={{ color: '#94a3b8' }}>{label}</span>
-                                  <span>{renderedValue}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {selectedHistoryEvent.warnings.length > 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      {getCurrentNotes(selectedHistoryEvent.warnings).length > 0 && (
-                        <>
-                          <strong style={{ color: '#93c5fd' }}>Event notes</strong>
-                          <div className="artifact-list" style={{ marginTop: 8 }}>
-                            {getCurrentNotes(selectedHistoryEvent.warnings).map((warning) => (
-                              <div key={warning.id} className="card" style={{ borderColor: '#1e3a5f', background: '#0a1525' }}>
-                                <div className="row">
-                                  <strong>{warning.title}</strong>
-                                  <div style={{ display: 'flex', gap: 6 }}>
-                                    <span className="badge info">{getSeverityLabel(warning)}</span>
-                                    <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                                  </div>
-                                </div>
-                                <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                                <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {getProvenanceNotes(selectedHistoryEvent.warnings).length > 0 && (
-                        <>
-                          <strong>Event provenance</strong>
-                          <div className="artifact-list" style={{ marginTop: 8 }}>
-                            {getProvenanceNotes(selectedHistoryEvent.warnings).map((warning) => (
-                              <div key={warning.id} className="card">
-                                <div className="row">
-                                  <strong>{warning.title}</strong>
-                                  <div style={{ display: 'flex', gap: 6 }}>
-                                    <span className="badge info">{getSeverityLabel(warning)}</span>
-                                    <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                                  </div>
-                                </div>
-                                <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                                <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {getActiveWarnings(selectedHistoryEvent.warnings).length > 0 && (
-                        <>
-                          <strong>Event warnings</strong>
-                          <div className="artifact-list" style={{ marginTop: 8 }}>
-                            {getActiveWarnings(selectedHistoryEvent.warnings).map((warning) => (
-                              <div key={warning.id} className="card">
-                                <div className="row">
-                                  <strong>{warning.title}</strong>
-                                  <div style={{ display: 'flex', gap: 6 }}>
-                                    <span className={`badge ${warning.severity}`}>{getSeverityLabel(warning)}</span>
-                                    <span className={`badge ${getWarningScope(warning)}`}>{getWarningScopeLabel(warning)}</span>
-                                  </div>
-                                </div>
-                                <div className="small muted" style={{ marginTop: 6 }}>{warning.message}</div>
-                                <div className="small" style={{ marginTop: 6 }}>{getWarningRecoveryHint(warning)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  {'sql' in selectedHistoryEvent.details && typeof selectedHistoryEvent.details.sql === 'string' && (
-                    <pre className="card code-block">
-{String(selectedHistoryEvent.details.sql)}
-                    </pre>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </aside>
-
-      {!rightPanelOpen && (
-        <button
-          className="right-panel-grip"
-          title="Open details / history"
-          onClick={() => setRightPanelOpen(true)}
-        >
-          ◀
-        </button>
-      )}
-
-      {/* Command bar */}
-      <div className="command-bar">
-        <span style={{ color: '#8b949e', fontSize: 18 }}>⌘</span>
-        <input
-          type="text"
-          className="command-bar-input"
-          ref={commandInputRef}
-          placeholder="Ask anything…   / SQL   @osm @ckan @stac"
-          value={commandInput}
-          onChange={(e) => handleCommandChange(e.target.value)}
-          onFocus={() => setCommandFocused(true)}
-          onBlur={() => setTimeout(() => setCommandFocused(false), 200)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              if (commandInput.startsWith('/')) {
-                setActiveSidebar('query')
-              } else if (commandInput.startsWith('@')) {
-                setActiveSidebar('discover')
-              } else if (commandInput.trim()) {
-                setActiveSidebar('chain')
-              }
-            }
-            if (e.key === 'Escape') {
-              setCommandInput('')
-              setActiveSidebar(null)
-            }
-          }}
-        />
-        {commandInput && (
-          <button
-            className="secondary"
-            style={{ padding: '2px 8px', fontSize: 12 }}
-            onClick={() => { setCommandInput(''); setActiveSidebar(null) }}
-          >
-            ×
-          </button>
-        )}
-      </div>
-
-      {(commandFocused || activeSidebar === 'chain') && !commandInput && (
-        <div className="command-surface">
-          <div className="panel-title" style={{ marginTop: 0 }}>Try an example</div>
-          {commandExamples.map((example) => (
-            <div
-              key={example}
-              className="command-example"
-              onMouseDown={(e) => { e.preventDefault(); applyExampleQuery(example) }}
-            >
-              {example}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* NL plan bottom sheet — shown when chain visualization is active */}
-      {activeSidebar === 'chain' && (
-        <div className="bottom-sheet nl-plan-sheet bottom-sheet--expanded">
-          <div className="bottom-sheet-handle" onClick={() => setActiveSidebar(null)} />
-          <div className="bottom-sheet-content">
-            <h2 className="panel-title" style={{ marginTop: 0 }}>Plan</h2>
-            <NLQueryPanel
-              artifacts={artifacts}
-              addArtifact={(artifact) => { pushArtifactSnapshot(`NL Plan: ${artifact.name}`); setArtifacts(prev => [...prev, artifact]) }}
-              onPlanExecuted={(result) => {
-                if (result.success) {
-                  setHistory(prev => [...prev, ...result.historyEvents])
-                  addToast(`Executed plan: ${result.artifacts.length} layer(s) created`, 'success')
-                  if (result.artifacts[0]) setSelectedArtifactId(result.artifacts[0].id)
-                } else {
-                  addToast(`Plan failed: ${result.errors.join(', ')}`, 'error')
-                }
-              }}
-              externalQuery={commandInput}
-              onClose={() => setActiveSidebar(null)}
-              sheetMode={true}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Empty state bottom sheet — shown when no data exists */}
-      {!selectedArtifact && artifacts.filter(a => a.spatial && isFeatureCollection(a.data)).length === 0 && !activeSidebar && (
-        <div className="bottom-sheet empty-state-sheet bottom-sheet--expanded">
-          <div className="bottom-sheet-handle" />
-          <div className="bottom-sheet-content" style={{ textAlign: 'center' }}>
-            <div className="muted small">Map pane</div>
-            <div style={{ marginTop: 8 }}>Import or load a spatial dataset to see it on the map.</div>
-            <div className="muted small" style={{ marginTop: 8 }}>Supports GeoJSON (Point, LineString, Polygon, MultiPolygon) with direct map rendering.</div>
-            <div className="empty-state-actions" style={{ marginTop: 'var(--space-3)' }}>
-              <button className="secondary empty-state-btn" onClick={() => importFileRef.current?.click()}>
-                Import file
-              </button>
-              <button className="secondary empty-state-btn" onClick={openSampleImport}>
-                Try sample data
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <section className={`bottom-dock ${bottomDockExpanded ? 'expanded' : ''}`}>
-        {/* Handle (always visible) — collapsed = handle only, expanded = full bar + content */}
-        <div className="bottom-dock-handle" onClick={() => setBottomDockExpanded(!bottomDockExpanded)} />
-
-        {/* Tab bar (visible when expanded) */}
-        {bottomDockExpanded && (
-          <div className="bottom-dock-bar">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 'var(--weight-medium)' }}>
-                {bottomTab.charAt(0).toUpperCase() + bottomTab.slice(1)}
-                {selectedArtifact && ` — ${selectedArtifact.name}`}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              {(['table', 'sql', 'results'] as const).map(tab => (
-                <button
-                  key={tab}
-                  className={`tab ${bottomTab === tab ? 'active' : ''}`}
-                  onClick={(e) => { e.stopPropagation(); setBottomTab(tab) }}
-                  style={{ padding: '2px 8px', fontSize: 'var(--text-xs)' }}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Expanded content */}
-        {bottomDockExpanded && (
-        <>
-        {bottomTab === 'table' && (
-          <div>
-            {selectedArtifact && (
-              <div className="card" style={{ marginBottom: 12 }}>
-                <div className="row">
-                  <strong>Inspection focus</strong>
-                  <span className="badge">{selectedArtifact.name}</span>
-                </div>
-                <div className="small muted" style={{ marginTop: 6 }}>
-                  {selectedArtifactOutputKind === 'measurement-table'
-                    ? 'This is a measurement table. Table and details stay coherent, but there is no map-focus contract because the output is intentionally non-spatial.'
-                    : selectedArtifact.spatial && isFeatureCollection(selectedArtifact.data)
-                      ? (selectedRowIndex !== null
-                          ? `Feature ${selectedRowIndex + 1} is selected. Map, table, and details are now focused on the same layer context.`
-                          : 'No individual feature selected yet. Click a table row to focus one feature inside the selected layer.')
-                      : 'This layer is not currently map-synchronized. Table inspection still works, but feature-level map focus is unavailable.'}
-                </div>
-                {selectedRowIndex !== null && (
-                  <>
-                    <div className="inspection-focus-banner" style={{ marginTop: 10 }}>
-                      <span className="inspection-focus-dot" aria-hidden="true" />
-                      <span>
-                        Focused feature <strong>#{selectedRowIndex + 1}</strong> is active across map, table, and details.
-                      </span>
-                    </div>
-                    {selectedFeatureProperties && (
-                      <div className="small" style={{ marginTop: 8, color: '#cbd5e1' }}>
-                        Focused feature properties: {Object.entries(selectedFeatureProperties).slice(0, 4).map(([key, value]) => `${key}=${String(value)}`).join(', ') || 'no properties'}
-                      </div>
-                    )}
-                    <button 
-                      className="secondary" 
-                      style={{ marginTop: 10, fontSize: 12, padding: '4px 8px' }}
-                      onClick={() => setSelectedRowIndex(null)}
-                    >
-                      Clear focus
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            <div className="table-wrap" ref={tableContainerRef}>
-            <table>
-              <thead>
-                <tr>
-                  {(rowsForSelected[0] ? Object.keys(rowsForSelected[0]) : ['message']).map((column) => (
-                    <th key={column}>{column}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rowsForSelected.length === 0 ? (
-                  <tr><td className="muted">Select or import a spatial layer to inspect rows.</td></tr>
-                ) : (
-                  rowsForSelected.map((row, idx) => {
-                    const isFocusedRow = selectedRowIndex === idx
-                    return (
-                      <tr
-                        key={idx}
-                        onClick={() => setSelectedRowIndex(idx)}
-                        aria-selected={isFocusedRow}
-                        className={isFocusedRow ? 'focused-row' : undefined}
-                      >
-                        {Object.entries(row).map(([key, value]) => (
-                          <td key={key}>{String(value)}</td>
-                        ))}
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
-        )}
-
-        {bottomTab === 'sql' && (
-          <div>
-            <div className="card" style={{ marginBottom: 12 }}>
-              <div className="row">
-                <strong>{artifacts.filter((artifact) => artifact.tableName).length === 0 ? 'No data loaded' : `${artifacts.filter((artifact) => artifact.tableName).length} tables loaded`}</strong>
-              </div>
-              <div className="small muted" style={{ marginTop: 8 }}>
-                {artifacts.filter((artifact) => artifact.tableName).length === 0
-                  ? 'Import a GeoJSON file or discover data to enable SQL queries.'
-                  : artifacts
-                      .filter((artifact) => artifact.tableName)
-                      .map((artifact) => `${artifact.tableName} (${artifact.kind})`)
-                      .join(', ')}
-              </div>
-              {artifacts.filter((artifact) => artifact.tableName).length === 0 && (
-                <div className="small muted" style={{ marginTop: 8, fontStyle: 'italic' }}>
-                  <button
-                    className="secondary"
-                    style={{ padding: '2px 8px', fontSize: 'inherit' }}
-                    onClick={() => setBottomTab('table')}
-                  >
-                    Import data
-                  </button>
-                  {' '}or{' '}
-                  <button
-                    className="empty-state-link"
-                    style={{ padding: '2px 8px', fontSize: 'inherit' }}
-                    onClick={() => setActiveSidebar('discover')}
-                  >
-                    discover data
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="small muted" style={{ marginBottom: 4, fontStyle: 'italic' }}>
-              Example query — import data to run this.
-            </div>
-            <textarea className="sql-editor" value={sql} onChange={(event) => setSql(event.target.value)} />
-            {queryError && (
-              <div className="card danger" style={{ marginTop: 12 }}>
-                <strong>Query failed</strong>
-                <div className="small muted" style={{ marginTop: 6 }}>{queryError}</div>
-                <div className="small" style={{ marginTop: 6 }}>Recovery: verify table names, SQL syntax, and that the referenced layer tables are registered in the workspace.</div>
-              </div>
-            )}
-            <div className="actions">
-              <button className="primary" onClick={runQuery} disabled={queryRunning || artifacts.filter((artifact) => artifact.tableName).length === 0}>{queryRunning ? 'Running…' : 'Run query'}</button>
-              <button className="secondary" onClick={() => setShowSaveQueryDialog(true)} disabled={!queryHasRunSuccessfully}>Save Query</button>
-              <button className="secondary" onClick={() => setSql(SAMPLE_SQL)}>Reset to example</button>
-            </div>
-          </div>
-        )}
-
-        {bottomTab === 'results' && (
-          <div>
-            {!queryPreview && <div className="card muted">No query result preview yet.</div>}
-            {queryPreview && (
-              <>
-                <div className="card">
-                  <div className="row">
-                    <strong>Result preview</strong>
-                    <span className="badge">{formatCount(queryPreview.rows.length, 'row')}</span>
-                  </div>
-                  <div className="small muted" style={{ marginTop: 6 }}>
-                    Referenced tables: {queryPreview.referencedTables?.length ? queryPreview.referencedTables.join(', ') : (queryPreview.sourceTableName || 'none detected')}
-                  </div>
-                  <div className="small muted" style={{ marginTop: 4 }}>
-                    Source layers matched: {queryPreview.sourceArtifactIds?.length ? queryPreview.sourceArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ') : 'none matched directly'}
-                  </div>
-                  {queryPreviewMaterializedOutputKind && (
-                    <div className="small" style={{ marginTop: 6, color: '#cbd5e1' }}>
-                      If materialized now, output kind would be <strong>{queryPreview.materialization?.outputKindLabel ?? getArtifactOutputKindLabel(queryPreviewMaterializedOutputKind)}</strong>. {queryPreview.materialization?.outputKindDescription}
-                    </div>
-                  )}
-                  {queryPreviewProvenancePresentation && (
-                    <div className="small" style={{ marginTop: 6, color: '#cbd5e1' }}>
-                      Provenance strength: <strong>{queryPreviewProvenancePresentation.label}</strong>. {queryPreviewProvenancePresentation.message}
-                    </div>
-                  )}
-                  <div className="small muted" style={{ marginTop: 4 }}>
-                    This preview uses the same provenance-strength, output-kind, and persisted-layer vocabulary that will be recorded if you materialize it.
-                  </div>
-                  
-                  {/* Materialization naming dialog */}
-                  {materializeStage === 'naming' && (
-                    <div className="card" style={{ marginTop: 12, background: '#f0f9ff', border: '1px solid #0ea5e9' }}>
-                      <div className="row">
-                        <strong>Name your derived layer</strong>
-                      </div>
-                      <div className="small muted" style={{ marginTop: 6 }}>
-                        Give this query result a name to save it as a derived layer in your workspace.
-                      </div>
-                      <div style={{ marginTop: 12 }}>
-                        <input
-                          type="text"
-                          value={derivedArtifactName}
-                          onChange={(e) => setDerivedArtifactName(e.target.value)}
-                          placeholder="Enter layer name..."
-                          style={{ width: '100%', padding: '8px', fontSize: '14px' }}
-                          disabled={materializing}
-                        />
-                      </div>
-                      <div className="actions" style={{ marginTop: 12 }}>
-                        <button 
-                          className="primary" 
-                          onClick={confirmMaterialize}
-                          disabled={materializing || !derivedArtifactName.trim()}
-                        >
-                          {materializing ? 'Creating...' : 'Confirm & Create'}
-                        </button>
-                        <button 
-                          className="secondary" 
-                          onClick={() => { setMaterializeStage('idle'); setDerivedArtifactName('') }}
-                          disabled={materializing}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Materialize button (shown when not in naming mode and not yet materialized) */}
-                  {materializeStage === 'idle' && !queryPreview.materializedArtifactId && (
-                    <>
-                      <div className="small muted" style={{ marginTop: 6 }}>
-                        This is still a preview. Materialize it to create a derived layer.
-                      </div>
-                      <div className="actions">
-                        <button className="primary" onClick={initiateMaterialization}>Materialize result</button>
-                      </div>
-                    </>
-                  )}
-                  
-                  {/* Already materialized indicator */}
-                  {queryPreview.materializedArtifactId && (
-                    <div className="small muted" style={{ marginTop: 6 }}>
-                      ✓ Materialized as layer. <button className="link" onClick={() => {
-                        const artifact = artifacts.find(a => a.id === queryPreview.materializedArtifactId)
-                        if (artifact) setSelectedArtifactId(artifact.id)
-                      }}>View layer</button> or re-run query to create a new one.
-                    </div>
-                  )}
-                  
-                  {/* Materializing indicator */}
-                  {materializeStage === 'materializing' && (
-                    <div className="small muted" style={{ marginTop: 6 }}>
-                      Creating derived layer...
-                    </div>
-                  )}
-                </div>
-                <div className="table-wrap" style={{ marginTop: 12 }}>
-                  <table>
-                    <thead>
-                      <tr>{queryPreview.columns.map((column) => <th key={column}>{column}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {queryPreview.rows.map((row, idx) => (
-                        <tr key={idx}>
-                          {queryPreview.columns.map((column) => <td key={column}>{String(row[column])}</td>)}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        </>
-        )}
-      </section>
+      <BottomDock {...bottomDockProps} />
       {/* Toast notifications */}
       {toasts.length > 0 && (
         <div className="toast-container">
