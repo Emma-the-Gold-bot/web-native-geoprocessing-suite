@@ -2,7 +2,7 @@
 
 ## Summary
 
-A project to define and potentially build a browser-first, local-first, hybrid-capable geospatial workbench. The aim is not to port desktop GIS wholesale into the browser, but to identify the right native web form for geospatial analysis, transformation, visualization, and eventually collaboration. Current focus: strategy, architecture, and an MVP specification for a vector-first browser spatial workbench.
+A browser-first, local-first, hybrid-capable geospatial workbench with a natural language interface. Three-layer architecture: **Core (engine) → Operations → Chains**. The AI translates natural language into operations and chains to run on the engine. Operations and chains have standard schemas consumed by three clients: the engine (validation), the UI (dialogs), and the AI (intent mapping).
 
 ## Status
 
@@ -10,10 +10,27 @@ A project to define and potentially build a browser-first, local-first, hybrid-c
 - Priority: high
 - Owner: Emma + Pilgrim
 - Started: 2026-03-17
-- Last updated: 2026-03-22
+- Last updated: 2026-06-13
 - Milestone 0: verified
 - Milestone 1 tranche 1: complete for scoped deliverables
+- Plugin schema: integrated (intent metadata, chain registry, NL loop)
 - Support envelope: tiered; see `SUPPORT-ENVELOPE.md` and `PROGRESS.md` for current truth surface
+
+## Architecture
+
+```
+NL → [AI translates] → Operations / Chains → Engine executes
+```
+
+The plugin schema is the interface. One definition, three consumers:
+
+| Consumer | Reads | Purpose |
+|----------|-------|---------|
+| **Engine** | `geometryContract`, `crsContract`, `outputContract` | Validate inputs, enforce contracts, refuse bad calls |
+| **UI** | `uiHints`, `intent.parameters` | Render dialogs, parameter forms, confirmation surfaces |
+| **AI** | `intent.triggers`, `intent.examples`, `intent.disambiguation` | Map natural language to operations, fill parameters |
+
+See `PLUGIN-SCHEMA.md` for the full architecture.
 
 ## Current support-envelope read
 
@@ -80,8 +97,12 @@ See `SUPPORT-ENVELOPE.md` and `PROGRESS.md` for the canonical validation tier st
 
 ## Decisions
 
-- 2026-03-17 — Frame the effort as a browser-native spatial workbench first, not a QGIS replacement — reduces scope creep and sharpens the MVP.
-- 2026-03-17 — Proceed with an MVP spec as the next concrete step — architecture alone is too abstract without module and milestone decisions.
+- 2026-03-17 — Frame the effort as a browser-native spatial workbench, not a QGIS replacement.
+- 2026-03-17 — Proceed with an MVP spec as the next concrete step.
+- 2026-06-12 — **Plugin schema architecture: Core → Operations → Chains.** The operation registry is the single interface for all consumers (engine, UI, AI). No separate AI API layer.
+- 2026-06-12 — **Intent metadata added to all 15 operations.** Triggers, parameters, examples, disambiguation — the AI-readable surface.
+- 2026-06-12 — **Chain registry created with 7 composed workflows.** Multi-step operations declared as chains over existing ops.
+- 2026-06-12 — **NL → Plan → Confirm → Execute loop built.** Trigger-matching resolver, plan builder with contract validation, plan executor using existing operation executors, NL Query Panel in the bottom dock.
 
 ## Related Notes
 
@@ -94,6 +115,11 @@ See `SUPPORT-ENVELOPE.md` and `PROGRESS.md` for the canonical validation tier st
 
 ## Related Files
 
+- [PLUGIN-SCHEMA](./PLUGIN-SCHEMA.md) — architecture overview, type definitions
+- [OPERATION-INTENT-MAP](./OPERATION-INTENT-MAP.ts) — intent metadata for all 15 operations
+- [CHAIN-REGISTRY](./CHAIN-REGISTRY.ts) — 7 pre-built composed workflows
+- [NL-LOOP-IMPLEMENTATION-BRIEF](./NL-LOOP-IMPLEMENTATION-BRIEF.md) — NL loop implementation spec
+- [PLUGIN-SCHEMA-IMPLEMENTATION-BRIEF](./PLUGIN-SCHEMA-IMPLEMENTATION-BRIEF.md) — plugin schema integration spec
 - [MVP-SPEC](./MVP-SPEC.md)
 - [UX-FRAMING](./UX-FRAMING.md)
 - [UX-CANONICAL-FLOWS](./UX-CANONICAL-FLOWS.md)
@@ -124,3 +150,8 @@ See `SUPPORT-ENVELOPE.md` and `PROGRESS.md` for the canonical validation tier st
 - 2026-03-18 — reframed Milestone 0 into an explicit verification workflow, replaced the outdated gap-audit role with a completion/verification checklist, and reconciled milestone docs around the real-file GeoParquet smoke-test requirement
 - 2026-03-18 — added a workspace-local Playwright skill, created a reusable GeoParquet smoke script, found and fixed a BigInt serialization bug in the GeoParquet import/runtime path, and verified Milestone 0 end-to-end against `test-data/example.parquet`
 - 2026-03-18 — completed the first Milestone 1 tranche for its honest scope: saved queries are real, GeoJSON export is real, project persistence restores usable project state on reopen, and the misleading pseudo-GeoParquet export was replaced with an honest JSON fallback
+- 2026-06-12 — **Plugin schema pivot.** Architecture decision: Core → Operations → Chains. The operation registry becomes the single interface for engine, UI, and AI.
+- 2026-06-12 — Formalized `dissolve-global` and `crs-assign` in the operation registry (15 operations total).
+- 2026-06-12 — Added `intent` metadata to all 15 operations: triggers, parameters, examples, disambiguation.
+- 2026-06-12 — Created chain registry with 7 composed workflows: area-within-boundary, area-by-owner, conflict-detection, prepare-for-analysis, shape-analysis, features-near-features.
+- 2026-06-12 — Built NL → Plan → Confirm → Execute loop: query resolver (trigger matching), plan builder (contract validation), plan executor (existing operation executors), NL Query Panel (bottom dock tab).

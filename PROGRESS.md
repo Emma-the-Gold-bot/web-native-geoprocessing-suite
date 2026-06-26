@@ -16,9 +16,9 @@ This file is the living status board for the project. It should answer:
 
 ## Current phase
 
-- **Phase:** Milestone 1 tranche 2 — first geometry operations on the spatial engine path
-- **Status:** buffer, centroid, global dissolve, narrow grouped dissolve v1, narrow convex hull v1, narrow envelope v1, narrow simplify v1, narrow area v1, narrow perimeter v1, narrow compactness v1, and narrow attribute-join v1 are landed; CRS debt-paydown, reprojection workflow, and verified local PROJ runtime hardening landed; map-pane render truth for sample GeoJSON fixed; results/materialization contradiction fixed; in-pane map-unavailable states hardened; warning/info/provenance semantics cleaned up; smoke-map assertions strengthened; final QA pass now green after DOM and harness cleanup; CRS provenance tracking added with explicit confidence badges and UI display; reprojection validation tests added (4326 fixture, round-trip, unknown-CRS warning); preview-safe browser validation harness repaired so support-envelope and operation-validation browser runs now execute against built app runtime instead of broken `/src/*` preview imports; convex hull v1 now exists as a narrow single-input polygon/multipolygon path with known stored CRS required, one derived hull output, and no source-attribute preservation; envelope v1 now also exists as a narrow single-input polygon/multipolygon bounding-box path with known stored CRS required, one derived polygon output in the same stored CRS, and no source-attribute preservation; simplify v1 now also exists as a narrow single-input polygon/multipolygon path with known stored CRS required, user-provided tolerance interpreted in source CRS units, stored CRS preserved, source attributes preserved, and no auto-transform or topology-preserving claim; area v1 now also exists as a narrow single-input polygon/multipolygon measurement path with known stored CRS required, no auto-transform, no geodesic claim, a non-spatial measurement-table output, one row per input feature, and `area_value` / `area_unit` fields with square-meter output only on the current trusted planar-meter CRS allowlist; perimeter v1 now also exists as a narrow single-input polygon/multipolygon measurement path with known stored CRS required, no auto-transform, no geodesic claim, a non-spatial measurement-table output, one row per input feature, and `perimeter_value` / `perimeter_unit` fields with meter output only on the current trusted planar-meter CRS allowlist; compactness v1 now also exists as a narrow single-input polygon/multipolygon measurement path with known stored CRS required, no auto-transform, no geodesic claim, a non-spatial measurement-table output, one row per input feature, and `compactness_value` / `compactness_unit` fields with unitless output only on the current trusted planar-meter CRS allowlist because the underlying planar area/perimeter math must remain honest; Clip v1 now exists as a narrow polygon-mask topology path with refusal guards, browser-verified non-empty success, browser-verified empty-result handling, and cleaned empty-result DuckDB registration; narrow Intersect v1 now also exists on the shared topology seam for polygon/multipolygon source + overlay with known matching CRS, source-only attributes, DuckDB registration, full two-input history/provenance, and browser-verified non-empty + empty-result handling; attribute-join v1 now also exists as a narrow exact-equality left-join path on the shared two-input seam with one key per side, explicit right-field selection, first-match-only duplicate-right behavior, null fill for unmatched left rows, `join_` collision prefixing, and preservation of the left artifact's output kind / geometry semantics, with cheap runtime proof for both spatial-left and tabular-left outputs plus DuckDB registration/queryability truth; grouped dissolve v1 now closes the intended aggregation bridge at the product level, but the validation surface is still asymmetric: registry/UI/execution truth is present, while cheap/runtime/browser proof still lags behind the stronger coverage that clip/intersect/attribute-join already have; CRS confidence/provenance semantics after reproject, clip, and intersect now keep explicit output CRS truth from inheriting stale ambiguity; operation/query lineage is now more explicit in event detail; right-panel provenance rendering is grouped; first-form map↔table synchronization is landed; contradiction-hunting across reproject, clip, intersect, query lineage, and map↔table sync came back clean; the table inspection seam has now been polished with scroll-to-row, explicit clear-focus, richer focused-feature detail, cleaner focused-row styling, and a stronger inspection-focus banner; non-spatial output handling is now tighter across export/materialization/persistence/result-summary seams so measurement tables and other tabular outputs are treated as first-class artifacts instead of inheriting geometry-only export assumptions; and the current browser QA surface is green after updating stale topology assertions, fixing the last reprojection warning-propagation leak, and replacing the weak one-click map-focus smoke with a deterministic local click-grid proof for map→table focus
-- **Last updated:** 2026-03-23
+- **Phase:** Plugin schema integration — NL interface layer
+- **Status:** Plugin schema architecture decided, intent metadata added to all 15 operations, chain registry created with 7 composed workflows, NL → Plan → Confirm → Execute loop built with query resolver, plan builder, plan executor, and NL Query Panel. Build passes. Existing operation execution paths unchanged.
+- **Last updated:** 2026-06-13
 
 ---
 
@@ -47,6 +47,65 @@ Validation performed:
   - Verified saved queries persist and restore
 
 Milestone 0 remains verified; Milestone 1 tranche 1 is now honestly complete for the scope it actually ships.
+
+---
+
+## Plugin schema integration — 2026-06-12
+
+### Architecture decision
+
+**Core (engine) → Operations → Chains.** The AI translates natural language into operations and chains to run on the engine. The operation registry is the single interface for all consumers.
+
+### What was implemented
+
+**1. Intent metadata on all 15 operations**
+- `src/lib/operations/types.ts` — added `OperationIntent`, `IntentParameter`, `IntentExample` types
+- `src/lib/operations/registry.ts` — added `intent` field to `OperationDefinition`, formalized `dissolve-global` and `crs-assign`
+- `src/lib/operations/intent-data.ts` — intent map for all 15 operations (triggers, parameters, examples, disambiguation)
+
+Each operation now declares:
+- **triggers** — NL words that map to this op ("buffer" → "around", "near", "proximity")
+- **parameters** — typed, with role hints (source/mask/overlay/join_table)
+- **examples** — NL queries with how they resolve
+- **disambiguation** — what NOT to confuse it with
+
+**2. Chain registry**
+- `src/lib/operations/chain-registry.ts` — 7 pre-built composed workflows
+
+| Chain | Steps | Use case |
+|-------|-------|----------|
+| area-within-boundary | clip → area | Measure features within a boundary |
+| area-by-owner | area → attribute-join | Parcel sizes with ownership |
+| conflict-detection | intersect → attribute-join | Overlay + enrichment (AquaGraph pattern) |
+| prepare-for-analysis | reproject → simplify | CRS prep for measurement |
+| shape-analysis | area + compactness | Shape metrics |
+| features-near-features | buffer → intersect | Proximity analysis |
+
+**3. NL → Plan → Confirm → Execute loop**
+- `src/lib/nl/query-resolver.ts` — trigger matching with chain resolution, parameter extraction, confidence scoring
+- `src/lib/nl/plan-builder.ts` — resolves candidates to concrete execution plans with contract validation
+- `src/lib/nl/plan-executor.ts` — runs confirmed plans using existing operation executors
+- `src/components/NLQueryPanel.tsx` — "Ask" tab in bottom dock, plan visualization, confirmation UI
+
+**4. Build verification**
+- `npm run build` passes
+- No existing operation execution paths changed
+- No existing UI dialogs broken
+
+### What is honest about this
+
+- Uses **trigger matching**, not an LLM — proves the schema works as an interface
+- The AI is a replaceable engine that reads the same registry
+- Contract validation happens at plan build time (CRS, geometry type)
+- Refusal conditions surface before execution, not after
+- Confidence scoring is transparent
+
+### What is not yet
+
+- No LLM-backed resolver (trigger matching only)
+- No parameter inference from workspace context
+- No test with real data (needs manual QA)
+- No chain condition handling (e.g., "skip step 2 if enrichment not provided")
 
 ---
 

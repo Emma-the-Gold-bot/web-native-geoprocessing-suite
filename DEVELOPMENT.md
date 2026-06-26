@@ -314,3 +314,55 @@ What it does NOT verify (requires fixtures + follow-up slice):
 | 2026-06-24 | **Dispatch pattern: COMPLEMENTARY** (worker + tester with disjoint file scopes) | Slice 3 fusion caused data loss (parallel writers, last-write-wins). New pattern: implementer writes src/, tester writes tests + review doc in different files. Zero collision by design. |
 | 2026-06-24 | **Verifier role removed; Judge subsumes verification** | Judge already checks acceptance criteria against code evidence. Tester is the proactive second lens (writes failing tests). Verifier was redundant cost without demonstrated value. |
 | 2026-06-24 | **Slice 4.1-4.5 — UX fix loop** (commits `8cd5dc0` → `4b53bc6`) | Pilgrim grumpy about UI/UX. Designer sub-agent dispatched for critique. 5 small slices shipped in one hour in response: bottom dock fix, empty state CTAs, sidebar affordances, NL plan picker, mobile refactor. 107/107 tests passing by end. |
+---
+
+## Slices 5-9 — COMPLETE (2026-06-25)
+
+All remaining slices shipped in one session. Final state: 262 tests, 8 test files, build clean, smoke 9/9.
+
+| Slice | Description | Commit |
+|-------|-------------|--------|
+| 5 | Bottom sheet pattern + density cleanup | `d80a052` |
+| 6 | Discovery backend wiring + health check | `d3d3755` |
+| 7 | Discovery prefixes (@osm/@ckan/@stac) | already done (Slice 6c) |
+| 8 | Undo/redo stack (12 mutation sites, keyboard shortcuts) | `4a34b1b` |
+| 9 | Export menu + keyboard shortcuts (7 shortcuts, dropdown) | `b0e4d88` |
+
+### Slice 5: Bottom Sheet Pattern + Density Cleanup (COMPLETE)
+- Replaced centered overlay cards with `.bottom-sheet` components
+- Bottom dock collapsed: 6px handle only (was 32px peek bar)
+- NL plan moved from sidebar drawer to bottom sheet above command bar
+- Empty-state CTAs in bottom sheet
+- Mobile density: tab bar (56px) + command bar (44px) = 100px idle
+- Complementary dispatch: Qwen 3.7+ (impl) + MiMo v2.5 Pro (tests) + GLM 5.2 (judge) — ACCEPT
+
+### Slice 6: Discovery Backend Wiring (COMPLETE)
+- Vite proxy: /api/* → localhost:8001 (dev + preview)
+- checkDiscoveryHealth() in discovery.ts with clear error messages
+- DiscoveryPanel: backend status badge (checking/connected/offline)
+- discovery/README.md: setup guide
+- Fix: DiscoveryPanel imports checkDiscoveryHealth from lib instead of inline fetch
+
+### Slice 8: Undo/Redo Stack (COMPLETE)
+- Snapshot-based undo: undoStack/redoStack refs with full artifacts snapshots
+- pushArtifactSnapshot(label) before all 12 setArtifacts mutation sites
+- handleUndo/handleRedo with layer settings cleanup (both directions)
+- Keyboard: Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Ctrl+Y
+- Undo2/Redo2 buttons in top bar with disabled states + tooltips
+- Complementary dispatch: Qwen 3.7+ (impl) + MiMo v2.5 Pro (tests) + GLM 5.2 (judge) — ACCEPT
+
+### Slice 9: Export Menu + Keyboard Shortcuts (COMPLETE)
+- Export dropdown in top bar: GeoJSON + JSON, disabled when no options, closes on outside click
+- 7 keyboard shortcuts: Cmd/Ctrl+S, O, N, K, B, E, /
+- isTyping guard blocks shortcuts in inputs/textareas (except Cmd/Ctrl+S)
+- Note: Implementer output truncated mid-sentence; main agent completed remaining work directly
+
+### Decision Log Additions
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-06-25 | **GLM 5.2 as default model** | Upgraded from MiniMax M3. Session override applied. |
+| 2026-06-25 | **Stale root-level CHAIN-REGISTRY.ts / OPERATION-INTENT-MAP.ts deleted** | Untracked duplicates from Phase 1. src/lib/operations/ versions are canonical. |
+| 2026-06-25 | **discovery/.venv/ added to .gitignore** | Nearly committed entire Python venv. Caught during Slice 5 commit. |
+| 2026-06-25 | **Redo layer settings cleanup** | Judge flagged asymmetry — handleRedo lacked cleanup that handleUndo had. Fixed directly before commit. |
+| 2026-06-25 | **Slice 9 implementer truncated — main agent completed** | Qwen 3.7+ output cut off mid-sentence. Main agent finished ref assignments, export dropdown UI, build fixes. Skipped Judge since main agent verified directly. |

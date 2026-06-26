@@ -443,6 +443,7 @@ function App() {
   const [queryPreview, setQueryPreview] = useState<QueryPreview | null>(null)
   const [queryError, setQueryError] = useState<string | null>(null)
   const [queryRunning, setQueryRunning] = useState(false)
+  const [queryHasRunSuccessfully, setQueryHasRunSuccessfully] = useState(false)
   const [importReview, setImportReview] = useState<ImportReviewState | null>(null)
   const [importStage, setImportStage] = useState<ImportStage>('idle')
   const [importing, setImporting] = useState(false)
@@ -1539,6 +1540,7 @@ function App() {
     setArtifacts(loaded.artifacts)
     setHistory(loaded.history || [])
     setHasUnsavedChanges(false)
+    setQueryHasRunSuccessfully(false)
     setStatusMessage(`Project "${loaded.name}" loaded successfully`)
     addToast(`Project "${loaded.name}" loaded successfully`, 'success')
   }
@@ -1559,6 +1561,7 @@ function App() {
     setSelectedArtifactId(null)
     setBottomTab('table')
     setHasUnsavedChanges(false)
+    setQueryHasRunSuccessfully(false)
     setStatusMessage('New project created')
     addToast('New project created', 'success')
   }
@@ -2081,6 +2084,7 @@ function App() {
           referencedTables,
           sourceArtifacts,
         }))
+        setQueryHasRunSuccessfully(true)
         setBottomTab('results')
         setBottomDockExpanded(true)
         setStatusMessage(getQueryRunStatusMessage({
@@ -3374,6 +3378,21 @@ function App() {
                         .map((artifact) => `${artifact.tableName} (${artifact.kind})`)
                         .join(', ')}
                 </div>
+                {artifacts.filter((artifact) => artifact.tableName).length === 0 && (
+                  <div className="small muted" style={{ marginTop: 8, fontStyle: 'italic' }}>
+                    Import data or load a sample to enable SQL queries.{' '}
+                    <button
+                      className="secondary"
+                      style={{ padding: '2px 8px', fontSize: 'inherit' }}
+                      onClick={() => importFileRef.current?.click()}
+                    >
+                      Import data
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="small muted" style={{ marginBottom: 4, fontStyle: 'italic' }}>
+                Example query — import data to run this.
               </div>
               <textarea className="sql-editor" value={sql} onChange={(event) => setSql(event.target.value)} />
               {queryError && (
@@ -3384,9 +3403,9 @@ function App() {
                 </div>
               )}
               <div className="actions">
-                <button className="primary" onClick={runQuery} disabled={queryRunning}>{queryRunning ? 'Running…' : 'Run query'}</button>
-                <button className="secondary" onClick={() => setShowSaveQueryDialog(true)}>Save Query</button>
-                <button className="secondary" onClick={() => setSql(SAMPLE_SQL)}>Reset sample SQL</button>
+                <button className="primary" onClick={runQuery} disabled={queryRunning || artifacts.filter((artifact) => artifact.tableName).length === 0}>{queryRunning ? 'Running…' : 'Run query'}</button>
+                <button className="secondary" onClick={() => setShowSaveQueryDialog(true)} disabled={!queryHasRunSuccessfully}>Save Query</button>
+                <button className="secondary" onClick={() => setSql(SAMPLE_SQL)}>Reset to example</button>
               </div>
 
               <h3 className="panel-title" style={{ marginTop: 16 }}>Saved Queries</h3>
@@ -5494,6 +5513,21 @@ function App() {
                       .map((artifact) => `${artifact.tableName} (${artifact.kind})`)
                       .join(', ')}
               </div>
+              {artifacts.filter((artifact) => artifact.tableName).length === 0 && (
+                <div className="small muted" style={{ marginTop: 8, fontStyle: 'italic' }}>
+                  Import data or load a sample to enable SQL queries.{' '}
+                  <button
+                    className="secondary"
+                    style={{ padding: '2px 8px', fontSize: 'inherit' }}
+                    onClick={() => setBottomTab('table')}
+                  >
+                    Import data
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="small muted" style={{ marginBottom: 4, fontStyle: 'italic' }}>
+              Example query — import data to run this.
             </div>
             <textarea className="sql-editor" value={sql} onChange={(event) => setSql(event.target.value)} />
             {queryError && (
@@ -5504,9 +5538,9 @@ function App() {
               </div>
             )}
             <div className="actions">
-              <button className="primary" onClick={runQuery} disabled={queryRunning}>{queryRunning ? 'Running…' : 'Run query'}</button>
-              <button className="secondary" onClick={() => setShowSaveQueryDialog(true)}>Save Query</button>
-              <button className="secondary" onClick={() => setSql(SAMPLE_SQL)}>Reset sample SQL</button>
+              <button className="primary" onClick={runQuery} disabled={queryRunning || artifacts.filter((artifact) => artifact.tableName).length === 0}>{queryRunning ? 'Running…' : 'Run query'}</button>
+              <button className="secondary" onClick={() => setShowSaveQueryDialog(true)} disabled={!queryHasRunSuccessfully}>Save Query</button>
+              <button className="secondary" onClick={() => setSql(SAMPLE_SQL)}>Reset to example</button>
             </div>
           </div>
         )}
