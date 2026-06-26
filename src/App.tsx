@@ -10,6 +10,11 @@ import { rowsToFeatureCollection } from './lib/wkb'
 import { saveProject, loadProject, hasSavedProject, clearSavedProject, createSavedQuery, reRegisterAllArtifactTables } from './lib/persistence'
 import { exportToGeoJson, exportToJson, triggerDownload, getArtifactExportOptions } from './lib/export'
 import { buildMaterializedQueryArtifact, buildQueryPreview, getQueryProvenanceStrengthPresentation } from './lib/query-semantics'
+import { useArtifacts } from './hooks/useArtifacts'
+import { useUndoRedo } from './hooks/useUndoRedo'
+import { useMapSync } from './hooks/useMapSync'
+import { useImportExport, fetchFullGeometryFromTable } from './hooks/useImportExport'
+import type { ImportReviewState } from './hooks/useImportExport'
 import {
   reconcileLayerSettings,
   toggleLayerVisibility as toggleLayerVisibilityPure,
@@ -34,53 +39,7 @@ FROM sample_parcels
 WHERE area_acres >= 5
 ORDER BY area_acres DESC`
 
-// Helper to fetch full geometry from a DuckDB table for map rendering
-const fetchFullGeometryFromTable = async (
-  tableName: string,
-  geometryColumn: string,
-): Promise<{ featureCollection: GeoJSON.FeatureCollection | null; geometryType: string | undefined } | null> => {
-  try {
-    const db = await getDuckDb()
-    const conn = await db.connect()
-    try {
-      // Fetch all rows from the table
-      const result = await conn.query(`SELECT * FROM ${tableName}`)
-      const rows = result.toArray().map((row) => row.toJSON() as Record<string, unknown>)
-      
-      if (rows.length === 0) {
-        return null
-      }
-      
-      const featureCollection = rowsToFeatureCollection(rows, geometryColumn)
-      if (!featureCollection) {
-        return null
-      }
-      
-      const inferredGeometryType = inferGeometryType(featureCollection)
-      return { featureCollection, geometryType: inferredGeometryType }
-    } finally {
-      await conn.close()
-    }
-  } catch (error) {
-    console.error('Failed to fetch full geometry from table:', error)
-    return null
-  }
-}
 
-interface ImportReviewState {
-  fileName: string
-  format: string
-  supportLevel: 'first-class' | 'compatibility' | 'partial' | 'unsupported'
-  rowCount?: number
-  geometryType?: string
-  spatial: boolean
-  crs?: string | 'unknown'
-  warnings: WarningRef[]
-  data: unknown
-  previewRows?: Record<string, unknown>[]
-  previewColumns?: string[]
-  tableName?: string
-}
 
 /**
  * Creates a derived artifact and history event from an operation result.
@@ -120,40 +79,6 @@ async function executeGeometryOperation(
     executeOperation,
     getDetails,
   })
-}
-
-/**
- * Extract CRS string from a GeoJSON FeatureCollection if declared
- * Follows the older GeoJSON spec (RFC 7946 obsoleted the "crs" member,
- * but many producers still include it).
- */
-function extractCrsFromFeatureCollection(fc: Record<string, unknown>): string | undefined {
-  const crs = fc.crs as Record<string, unknown> | undefined
-  if (!crs) return undefined
-  if (crs.type !== 'name') return undefined
-  const properties = crs.properties as Record<string, unknown> | undefined
-  const name = properties?.name as string | undefined
-  return name || undefined
-}
-
-/**
- * Build CRS provenance for imported artifacts
- * Import assumes unknown CRS unless explicitly declared (GeoJSON rarely has CRS)
- */
-function buildImportCrsProvenance(declaredCrs?: string): CrsProvenance {
-  if (declaredCrs && declaredCrs !== 'unknown') {
-    return {
-      confidence: 'known',
-      declaredCrs,
-      source: 'import-metadata',
-      warnings: [],
-    }
-  }
-  return {
-    confidence: 'unknown',
-    source: 'import-metadata',
-    warnings: ['CRS not explicitly declared in import. Coordinates are interpreted as WGS84 unless verified.'],
-  }
 }
 
 /**
@@ -432,11 +357,9 @@ function App() {
   }, [])
 
   const [projectName, setProjectName] = useState<string>('Untitled Project')
-  const [artifacts, setArtifacts] = useState<Artifact[]>([])
+  const { artifacts, setArtifacts, selectedArtifact, selectedArtifactId, setSelectedArtifactId, layerSettings, setLayerSettings } = useArtifacts()
   const [history, setHistory] = useState<HistoryEvent[]>([])
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([])
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
-  const [layerSettings, setLayerSettings] = useState<Record<string, LayerSettings>>({})
   const [pendingPostCommitSelectedArtifactId, setPendingPostCommitSelectedArtifactId] = useState<string | null>(null)
   const [bottomTab, setBottomTab] = useState<BottomTab>('table')
   const [bottomDockExpanded, setBottomDockExpanded] = useState(false)
@@ -475,56 +398,7 @@ function App() {
     setToasts(prev => prev.filter(t => t.id !== id))
   }
 
-  // Slice 8: Undo/Redo stack
-  interface UndoEntry {
-    artifacts: Artifact[]
-    label: string
-    timestamp: number
-  }
-  const undoStack = useRef<UndoEntry[]>([])
-  const redoStack = useRef<UndoEntry[]>([])
-
-  function pushArtifactSnapshot(label: string) {
-    undoStack.current.push({ artifacts: [...artifacts], label, timestamp: Date.now() })
-    redoStack.current = []
-  }
-
-  function handleUndo() {
-    const entry = undoStack.current.pop()
-    if (!entry) { addToast('Nothing to undo', 'info'); return }
-    redoStack.current.push({ artifacts: [...artifacts], label: entry.label, timestamp: Date.now() })
-    setArtifacts(entry.artifacts)
-    const remainingIds = new Set(entry.artifacts.map(a => a.id))
-    setLayerSettings(prev => {
-      const cleaned: Record<string, LayerSettings> = {}
-      for (const [id, settings] of Object.entries(prev)) {
-        if (remainingIds.has(id)) cleaned[id] = settings
-      }
-      return cleaned
-    })
-    addToast(`Undid: ${entry.label}`, 'info')
-  }
-
-  function handleRedo() {
-    const entry = redoStack.current.pop()
-    if (!entry) { addToast('Nothing to redo', 'info'); return }
-    undoStack.current.push({ artifacts: [...artifacts], label: entry.label, timestamp: Date.now() })
-    setArtifacts(entry.artifacts)
-    const remainingIds = new Set(entry.artifacts.map(a => a.id))
-    setLayerSettings(prev => {
-      const cleaned: Record<string, LayerSettings> = {}
-      for (const [id, settings] of Object.entries(prev)) {
-        if (remainingIds.has(id)) cleaned[id] = settings
-      }
-      return cleaned
-    })
-    addToast(`Redid: ${entry.label}`, 'info')
-  }
-
-  const canUndo = undoStack.current.length > 0
-  const canRedo = redoStack.current.length > 0
-  const undoLabel = canUndo ? undoStack.current[undoStack.current.length - 1].label : null
-  const redoLabel = canRedo ? redoStack.current[redoStack.current.length - 1].label : null
+  const { pushSnapshot: pushArtifactSnapshot, undo: handleUndo, redo: handleRedo, canUndo, canRedo, undoLabel, redoLabel } = useUndoRedo(artifacts, setArtifacts, layerSettings, setLayerSettings, addToast)
 
   const handleUndoRef = useRef<() => void>(() => {})
   const handleRedoRef = useRef<() => void>(() => {})
@@ -694,16 +568,11 @@ function App() {
   
   const mapNodeRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const mapSyncGenerationRef = useRef(0)
   const tableContainerRef = useRef<HTMLDivElement | null>(null)
   const artifactsRef = useRef<Artifact[]>([])
   const selectedArtifactIdRef = useRef<string | null>(null)
   const pendingPostCommitSelectedArtifactIdRef = useRef<string | null>(null)
 
-  const selectedArtifact = useMemo(
-    () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? null,
-    [artifacts, selectedArtifactId],
-  )
   selectedArtifactRef.current = selectedArtifact
 
   // derived values for operation dialogs are now in the dialog components
@@ -732,17 +601,6 @@ function App() {
     setSelectedArtifactId(pendingArtifactId)
     setPendingPostCommitSelectedArtifactId(null)
   }, [artifacts, pendingPostCommitSelectedArtifactId, selectedArtifactId])
-
-  // Initialize layer settings for new artifacts (ephemeral, not persisted)
-  useEffect(() => {
-    setLayerSettings((prev) => {
-      const { next, changed } = reconcileLayerSettings(
-        prev,
-        artifacts.map((a) => ({ id: a.id, spatial: a.spatial ?? false })),
-      )
-      return changed ? next : prev
-    })
-  }, [artifacts])
 
   // Layer control helpers
   const toggleLayerVisibility = (artifactId: string) => {
@@ -811,448 +669,7 @@ function App() {
     }
   }, [])
 
-  // Sync artifacts to map sources and layers
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    const spatialArtifacts = artifacts.filter(
-      (artifact) => artifact.spatial && isFeatureCollection(artifact.data),
-    )
-    // Sort by zIndex (ascending — lower zIndex renders first / below)
-    spatialArtifacts.sort((a, b) => {
-      const za = layerSettings[a.id]?.zIndex ?? 0
-      const zb = layerSettings[b.id]?.zIndex ?? 0
-      return za - zb
-    })
-
-    let cancelled = false
-    const syncGeneration = ++mapSyncGenerationRef.current
-
-    const mapSyncDebug = (() => {
-      if (typeof window === 'undefined') {
-        return {
-          disableBaseSourceSync: false,
-          disableSelectedSourceSync: false,
-          disableDisplayTransformForBase: false,
-          disableDisplayTransformForSelected: false,
-          disableLayerSync: false,
-          disablePolygonFill: false,
-          polygonLineOnly: false,
-          disableAutoFit: false,
-          logMapSync: false,
-        }
-      }
-      const params = new URLSearchParams(window.location.search)
-      const has = (key: string) => params.get(key) === '1'
-      return {
-        disableBaseSourceSync: has('debugDisableBaseSourceSync'),
-        disableSelectedSourceSync: has('debugDisableSelectedSourceSync'),
-        disableDisplayTransformForBase: has('debugDisableDisplayTransformForBase'),
-        disableDisplayTransformForSelected: has('debugDisableDisplayTransformForSelected'),
-        disableLayerSync: has('debugDisableLayerSync'),
-        disablePolygonFill: has('debugDisablePolygonFill'),
-        polygonLineOnly: has('debugPolygonLineOnly'),
-        disableAutoFit: has('debugDisableAutoFit'),
-        logMapSync: has('debugLogMapSync'),
-      }
-    })()
-
-    const syncLayers = async () => {
-      if (mapSyncDebug.logMapSync) {
-        console.log('[App][map-sync] start', {
-          syncGeneration,
-          selectedArtifactId,
-          artifactIds: spatialArtifacts.map((artifact) => artifact.id),
-        })
-      }
-      const existingSourceIds = new Set(Object.keys(map.getStyle().sources))
-      for (const [index, artifact] of spatialArtifacts.entries()) {
-        if (cancelled) return
-        const sourceId = `artifact-source-${artifact.id}`
-        const fillId = `artifact-fill-${artifact.id}`
-        const lineId = `artifact-line-${artifact.id}`
-        const pointId = `artifact-point-${artifact.id}`
-        const selectedSourceId = `artifact-selected-source-${artifact.id}`
-        const selectedFillId = `artifact-selected-fill-${artifact.id}`
-        const selectedLineId = `artifact-selected-line-${artifact.id}`
-        const selectedPointId = `artifact-selected-point-${artifact.id}`
-        const isSelected = artifact.id === selectedArtifactId
-        if (mapSyncDebug.logMapSync) {
-          console.log('[App][map-sync] artifact', {
-            syncGeneration,
-            artifactId: artifact.id,
-            artifactName: artifact.name,
-            isSelected,
-            geometryType: artifact.geometryType,
-            featureCount: isFeatureCollection(artifact.data) ? artifact.data.features.length : null,
-          })
-        }
-        
-        // Layer settings: visibility gate + opacity
-        const settings = layerSettings[artifact.id] ?? { visible: true, opacity: 1.0, zIndex: 0 }
-        // Z-order: layers are added in sorted order on first render; subsequent
-        // changes use map.moveLayer() in the reconciliation pass below.
-        const baseOpacity = settings.opacity
-        const fillOpacity = isSelected ? Math.min(baseOpacity + 0.2, 1.0) : baseOpacity
-        const lineWidth = isSelected ? 3 : 2
-        // Bright fill color - blue for selected, teal otherwise
-        const fillColor = isSelected ? '#3b82f6' : '#14b8a6' // blue-500 vs teal-500
-        const lineColor = isSelected ? '#93c5fd' : '#5eead4' // lighter blue vs lighter teal
-
-        // Only call display transform when at least one render path needs it.
-        // The transform is async and calls PROJ WASM for projected CRS —
-        // skipping it avoids a crash seam in headless/Playwright environments.
-        const needsDisplayTransform = !mapSyncDebug.disableDisplayTransformForBase
-          || !mapSyncDebug.disableDisplayTransformForSelected
-        const displayFeatureCollectionResult = needsDisplayTransform
-          ? await getDisplayFeatureCollection(artifact)
-          : null
-        if (cancelled || mapSyncGenerationRef.current !== syncGeneration) return
-        const displayFeatureCollection = displayFeatureCollectionResult?.featureCollection ?? (artifact.data as GeoJSON.FeatureCollection)
-        const rawFeatureCollection = artifact.data as GeoJSON.FeatureCollection
-
-        const withFeatureIndex = (featureCollection: GeoJSON.FeatureCollection) => ({
-          type: 'FeatureCollection' as const,
-          features: featureCollection.features.map((feature, featureIndex) => ({
-            ...feature,
-            properties: {
-              ...(feature.properties ?? {}),
-              __featureIndex: featureIndex,
-            },
-          })),
-        })
-
-        const baseFeatureCollection = withFeatureIndex(
-          mapSyncDebug.disableDisplayTransformForBase ? rawFeatureCollection : displayFeatureCollection,
-        )
-        const selectedBaseFeatureCollection = withFeatureIndex(
-          mapSyncDebug.disableDisplayTransformForSelected ? rawFeatureCollection : displayFeatureCollection,
-        )
-
-        if (!mapSyncDebug.disableBaseSourceSync) {
-          if (mapSyncDebug.logMapSync) {
-            console.log('[App][map-sync] base-source', {
-              artifactId: artifact.id,
-              sourceId,
-              action: map.getSource(sourceId) ? 'setData' : 'addSource',
-              featureCount: baseFeatureCollection.features.length,
-            })
-          }
-          if (!map.getSource(sourceId)) {
-            map.addSource(sourceId, {
-              type: 'geojson',
-              data: baseFeatureCollection,
-            })
-          } else {
-            ;(map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(baseFeatureCollection)
-          }
-        }
-
-        const selectedFeatureCollection =
-          artifact.id === selectedArtifactId &&
-          selectedRowIndex !== null &&
-          isFeatureCollection(selectedBaseFeatureCollection) &&
-          selectedBaseFeatureCollection.features[selectedRowIndex]
-            ? {
-                type: 'FeatureCollection' as const,
-                features: [selectedBaseFeatureCollection.features[selectedRowIndex]],
-              }
-            : { type: 'FeatureCollection' as const, features: [] }
-
-        if (!mapSyncDebug.disableSelectedSourceSync) {
-          if (mapSyncDebug.logMapSync) {
-            console.log('[App][map-sync] selected-source', {
-              artifactId: artifact.id,
-              selectedSourceId,
-              action: map.getSource(selectedSourceId) ? 'setData' : 'addSource',
-              featureCount: selectedFeatureCollection.features.length,
-              isSelected,
-            })
-          }
-          if (!map.getSource(selectedSourceId)) {
-            map.addSource(selectedSourceId, {
-              type: 'geojson',
-              data: selectedFeatureCollection,
-            })
-          } else {
-            ;(map.getSource(selectedSourceId) as maplibregl.GeoJSONSource).setData(selectedFeatureCollection)
-          }
-        }
-
-        if (mapSyncDebug.disableLayerSync) {
-          existingSourceIds.delete(sourceId)
-          existingSourceIds.delete(selectedSourceId)
-          continue
-        }
-
-        // Visibility gate: if layer is hidden, remove existing layers but keep source synced
-        if (!settings.visible) {
-          if (map.getLayer(fillId)) map.removeLayer(fillId)
-          if (map.getLayer(lineId)) map.removeLayer(lineId)
-          if (map.getLayer(pointId)) map.removeLayer(pointId)
-          if (map.getLayer(selectedFillId)) map.removeLayer(selectedFillId)
-          if (map.getLayer(selectedLineId)) map.removeLayer(selectedLineId)
-          if (map.getLayer(selectedPointId)) map.removeLayer(selectedPointId)
-          existingSourceIds.delete(sourceId)
-          existingSourceIds.delete(selectedSourceId)
-          continue
-        }
-
-        const beforeId = undefined
-        const geometryType = artifact.geometryType ?? ''
-        const baseSource = map.getSource(sourceId)
-        const selectedSource = map.getSource(selectedSourceId)
-        
-        // Handle Polygon and MultiPolygon (fill + line layers)
-        if (geometryType.includes('Polygon')) {
-          const shouldRenderPolygonFill = !mapSyncDebug.disablePolygonFill && !mapSyncDebug.polygonLineOnly
-
-          if (shouldRenderPolygonFill && baseSource) {
-            if (!map.getLayer(fillId)) {
-              map.addLayer(
-                {
-                  id: fillId,
-                  type: 'fill',
-                  source: sourceId,
-                  paint: {
-                    'fill-color': fillColor,
-                    'fill-opacity': fillOpacity,
-                  },
-                },
-                beforeId,
-              )
-              map.on('click', fillId, (event) => {
-                if (artifact.id !== selectedArtifactId) return
-                const featureIndex = event.features?.[0]?.properties?.__featureIndex
-                if (featureIndex !== undefined) {
-                  setSelectedRowIndex(Number(featureIndex))
-                  setBottomTab('table')
-                }
-              })
-            } else {
-              map.setPaintProperty(fillId, 'fill-color', fillColor)
-              map.setPaintProperty(fillId, 'fill-opacity', fillOpacity)
-            }
-          } else if (map.getLayer(fillId)) {
-            map.removeLayer(fillId)
-          }
-
-          if (baseSource && !map.getLayer(lineId)) {
-            map.addLayer({
-              id: lineId,
-              type: 'line',
-              source: sourceId,
-              paint: { 'line-color': lineColor, 'line-width': lineWidth },
-            })
-            map.on('click', lineId, (event) => {
-              if (artifact.id !== selectedArtifactId) return
-              const featureIndex = event.features?.[0]?.properties?.__featureIndex
-              if (featureIndex !== undefined) {
-                setSelectedRowIndex(Number(featureIndex))
-                setBottomTab('table')
-              }
-            })
-          } else {
-            map.setPaintProperty(lineId, 'line-color', lineColor)
-            map.setPaintProperty(lineId, 'line-width', lineWidth)
-          }
-
-          if (shouldRenderPolygonFill && selectedSource) {
-            if (!map.getLayer(selectedFillId)) {
-              map.addLayer({
-                id: selectedFillId,
-                type: 'fill',
-                source: selectedSourceId,
-                paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.25 },
-              })
-            }
-          } else if (map.getLayer(selectedFillId)) {
-            map.removeLayer(selectedFillId)
-          }
-          if (selectedSource && !map.getLayer(selectedLineId)) {
-            map.addLayer({
-              id: selectedLineId,
-              type: 'line',
-              source: selectedSourceId,
-              paint: { 'line-color': '#fbbf24', 'line-width': 4 },
-            })
-          }
-        }
-        
-        // Handle LineString and MultiLineString (line layer)
-        if (geometryType.includes('LineString')) {
-          if (baseSource && !map.getLayer(lineId)) {
-            map.addLayer({
-              id: lineId,
-              type: 'line',
-              source: sourceId,
-              paint: { 'line-color': fillColor, 'line-width': lineWidth + 1 },
-            })
-          } else {
-            map.setPaintProperty(lineId, 'line-color', fillColor)
-            map.setPaintProperty(lineId, 'line-width', lineWidth + 1)
-          }
-
-          if (selectedSource && !map.getLayer(selectedLineId)) {
-            map.addLayer({
-              id: selectedLineId,
-              type: 'line',
-              source: selectedSourceId,
-              paint: { 'line-color': '#fbbf24', 'line-width': 5 },
-            })
-          }
-        }
-        
-        // Handle Point and MultiPoint (circle layer)
-        if (geometryType.includes('Point')) {
-          if (baseSource && !map.getLayer(pointId)) {
-            map.addLayer({
-              id: pointId,
-              type: 'circle',
-              source: sourceId,
-              paint: {
-                'circle-radius': isSelected ? 8 : 6,
-                'circle-color': fillColor,
-                'circle-stroke-color': '#ffffff',
-                'circle-stroke-width': 2,
-              },
-            })
-            map.on('click', pointId, (event) => {
-              if (artifact.id !== selectedArtifactId) return
-              const featureIndex = event.features?.[0]?.properties?.__featureIndex
-              if (featureIndex !== undefined) {
-                setSelectedRowIndex(Number(featureIndex))
-                setBottomTab('table')
-              }
-            })
-          } else {
-            map.setPaintProperty(pointId, 'circle-radius', isSelected ? 8 : 6)
-            map.setPaintProperty(pointId, 'circle-color', fillColor)
-            map.setPaintProperty(pointId, 'circle-stroke-color', '#ffffff')
-            map.setPaintProperty(pointId, 'circle-stroke-width', 2)
-          }
-
-          if (selectedSource && !map.getLayer(selectedPointId)) {
-            map.addLayer({
-              id: selectedPointId,
-              type: 'circle',
-              source: selectedSourceId,
-              paint: {
-                'circle-radius': 10,
-                'circle-color': '#f59e0b',
-                'circle-stroke-color': '#ffffff',
-                'circle-stroke-width': 3,
-              },
-            })
-          }
-        }
-
-        existingSourceIds.delete(sourceId)
-        existingSourceIds.delete(selectedSourceId)
-        void index
-      }
-
-      // Z-order reconciliation pass
-      // MapLibre renders layers in add-order; on subsequent renders we need
-      // map.moveLayer() to keep render order in sync with zIndex changes.
-      const sortedVisibleArtifacts = spatialArtifacts
-        .filter((a) => layerSettings[a.id]?.visible !== false)
-        .sort((a, b) => {
-          const za = layerSettings[a.id]?.zIndex ?? 0
-          const zb = layerSettings[b.id]?.zIndex ?? 0
-          return za - zb
-        })
-
-      for (let i = 0; i < sortedVisibleArtifacts.length; i++) {
-        const artifact = sortedVisibleArtifacts[i]
-        const nextArtifact = sortedVisibleArtifacts[i + 1]
-
-        // Compute layer IDs (matching existing pattern)
-        const fillId = `artifact-fill-${artifact.id}`
-        const lineId = `artifact-line-${artifact.id}`
-        const pointId = `artifact-point-${artifact.id}`
-
-        // The "before" layer is the fill layer of the next-higher-zIndex artifact.
-        // For the topmost artifact, no beforeId → moves to top.
-        let beforeFillId: string | undefined
-        if (nextArtifact) {
-          beforeFillId = `artifact-fill-${nextArtifact.id}`
-        }
-
-        // Move each layer type if it exists.
-        if (map.getLayer(fillId) && beforeFillId && map.getLayer(beforeFillId)) {
-          map.moveLayer(fillId, beforeFillId)
-        } else if (map.getLayer(fillId)) {
-          map.moveLayer(fillId) // move to top
-        }
-        if (map.getLayer(lineId) && beforeFillId && map.getLayer(beforeFillId)) {
-          map.moveLayer(lineId, beforeFillId)
-        } else if (map.getLayer(lineId)) {
-          map.moveLayer(lineId)
-        }
-        if (map.getLayer(pointId) && beforeFillId && map.getLayer(beforeFillId)) {
-          map.moveLayer(pointId, beforeFillId)
-        } else if (map.getLayer(pointId)) {
-          map.moveLayer(pointId)
-        }
-      }
-
-      for (const sourceId of existingSourceIds) {
-        if (!sourceId.startsWith('artifact-')) continue
-        // Defensive: never clean up internal overlay sources (bbox preview, etc.)
-        if (sourceId.startsWith('__')) continue
-        const fillId = sourceId.replace('-source-', '-fill-')
-        const lineId = sourceId.replace('-source-', '-line-')
-        const pointId = sourceId.replace('-source-', '-point-')
-        const selectedFillId = sourceId.replace('-source-', '-selected-fill-')
-        const selectedLineId = sourceId.replace('-source-', '-selected-line-')
-        const selectedPointId = sourceId.replace('-source-', '-selected-point-')
-        if (mapSyncDebug.logMapSync) {
-          console.log('[App][map-sync] cleanup-source', {
-            sourceId,
-            hasFill: Boolean(map.getLayer(fillId)),
-            hasLine: Boolean(map.getLayer(lineId)),
-            hasPoint: Boolean(map.getLayer(pointId)),
-            hasSelectedFill: Boolean(map.getLayer(selectedFillId)),
-            hasSelectedLine: Boolean(map.getLayer(selectedLineId)),
-            hasSelectedPoint: Boolean(map.getLayer(selectedPointId)),
-            hasSource: Boolean(map.getSource(sourceId)),
-          })
-        }
-        if (map.getLayer(selectedFillId)) map.removeLayer(selectedFillId)
-        if (map.getLayer(selectedLineId)) map.removeLayer(selectedLineId)
-        if (map.getLayer(selectedPointId)) map.removeLayer(selectedPointId)
-        if (map.getLayer(fillId)) map.removeLayer(fillId)
-        if (map.getLayer(lineId)) map.removeLayer(lineId)
-        if (map.getLayer(pointId)) map.removeLayer(pointId)
-        if (map.getSource(sourceId)) map.removeSource(sourceId)
-      }
-    }
-
-    // Use a more robust approach: always wait for the map's load event
-    // For inline styles, we use map.loaded() which returns true when fully initialized
-    const trySync = () => {
-      if (cancelled) return
-      if (!mapRef.current) return
-
-      // Check if map is fully loaded and ready
-      if (map.loaded()) {
-        syncLayers().catch((e) => {
-          console.warn('[App] Error syncing layers:', e)
-          setTimeout(trySync, 100)
-        })
-      } else {
-        setTimeout(trySync, 50)
-      }
-    }
-
-    trySync()
-
-    return () => {
-      cancelled = true
-    }
-  }, [artifacts, selectedArtifactId, layerSettings])
+  useMapSync(mapRef.current, artifacts, layerSettings, selectedArtifactId, selectedRowIndex, setSelectedRowIndex, setBottomTab)
 
   // Slice 6b: Bbox preview overlay — renders semi-transparent rectangle on map
   useEffect(() => {
@@ -1419,110 +836,50 @@ function App() {
     }
   }, [])
 
-  // Project persistence functions
-  const handleSaveProject = () => {
-    saveProject(
-      projectName,
-      artifacts,
-      history,
-      savedQueries,
-      selectedArtifactId,
-      bottomTab,
-    )
-    setHasUnsavedChanges(false)
-    setShowSaveDialog(false)
-    setStatusMessage(`Project "${projectName}" saved successfully`)
-    addToast(`Project "${projectName}" saved successfully`, 'success')
-  }
-
-  const handleOpenProject = async () => {
-    const loaded = loadProject()
-    if (!loaded) {
-      setStatusMessage('No saved project found')
-      addToast('No saved project found', 'warning')
-      return
-    }
-
-    // Restore project state
-    setProjectName(loaded.name)
-    setSavedQueries(loaded.savedQueries || [])
-    setSelectedArtifactId(loaded.selectedArtifactId)
-    setBottomTab(loaded.activeTab || 'table')
-    
-    // Re-register tables in DuckDB for each artifact to restore queryability
-    try {
-      await reRegisterAllArtifactTables(loaded.artifacts)
-    } catch (error) {
-      console.error('Error re-registering tables:', error)
-      // Continue anyway - artifacts still have their data for rendering
-    }
-
-    setArtifacts(loaded.artifacts)
-    setHistory(loaded.history || [])
-    setHasUnsavedChanges(false)
-    setQueryHasRunSuccessfully(false)
-    setStatusMessage(`Project "${loaded.name}" loaded successfully`)
-    addToast(`Project "${loaded.name}" loaded successfully`, 'success')
-  }
+  // Import/Export via hook
+  const {
+    saveProject: handleSaveProject,
+    openProject: handleOpenProject,
+    newProject: handleNewProject,
+    exportGeoJson: handleExportGeoJson,
+    exportJSON: handleExportJson,
+    loadSample: openSampleImport,
+    importFile: handleFileImport,
+    confirmImport,
+  } = useImportExport({
+    projectName,
+    setProjectName,
+    artifacts,
+    setArtifacts,
+    history,
+    setHistory,
+    savedQueries,
+    setSavedQueries,
+    selectedArtifactId,
+    setSelectedArtifactId,
+    bottomTab,
+    setBottomTab,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    showSaveDialog,
+    setShowSaveDialog,
+    showExportMenu,
+    setShowExportMenu,
+    queryHasRunSuccessfully,
+    setQueryHasRunSuccessfully,
+    setStatusMessage,
+    addToast,
+    importReview,
+    setImportReview,
+    importStage,
+    setImportStage,
+    importing,
+    setImporting,
+    selectedArtifact,
+    pushArtifactSnapshot,
+  })
   handleOpenProjectRef.current = handleOpenProject
-
-  const handleNewProject = () => {
-    if (hasUnsavedChanges) {
-      if (!confirm('You have unsaved changes. Create new project anyway?')) {
-        return
-      }
-    }
-    // Only clear saved project if there were unsaved changes
-    // Otherwise preserve the saved project so user can "Open Project" later
-    setProjectName('Untitled Project')
-    setArtifacts([])
-    setHistory([])
-    setSavedQueries([])
-    setSelectedArtifactId(null)
-    setBottomTab('table')
-    setHasUnsavedChanges(false)
-    setQueryHasRunSuccessfully(false)
-    setStatusMessage('New project created')
-    addToast('New project created', 'success')
-  }
   handleNewProjectRef.current = handleNewProject
-
-  // Export functions
-  const handleExportGeoJson = () => {
-    if (!selectedArtifact) {
-      setStatusMessage(getExportFailureStatusMessage('missing-selection'))
-      addToast(getExportFailureStatusMessage('missing-selection'), 'error')
-      return
-    }
-    const result = exportToGeoJson(selectedArtifact)
-    if (result) {
-      triggerDownload(result.blob, result.filename)
-      setStatusMessage(getExportSuccessStatusMessage(selectedArtifact, 'GeoJSON'))
-      addToast(getExportSuccessStatusMessage(selectedArtifact, 'GeoJSON'), 'success')
-    } else {
-      setStatusMessage(getExportFailureStatusMessage('geojson'))
-      addToast(getExportFailureStatusMessage('geojson'), 'error')
-    }
-    setShowExportMenu(false)
-  }
-
-  const handleExportJson = async () => {
-    if (!selectedArtifact) {
-      setStatusMessage(getExportFailureStatusMessage('missing-selection'))
-      addToast(getExportFailureStatusMessage('missing-selection'), 'error')
-      return
-    }
-    const result = await exportToJson(selectedArtifact)
-    if (result) {
-      triggerDownload(result.blob, result.filename)
-      setStatusMessage(getExportSuccessStatusMessage(selectedArtifact, 'JSON'))
-      addToast(getExportSuccessStatusMessage(selectedArtifact, 'JSON'), 'success')
-    } else {
-      setStatusMessage(getExportFailureStatusMessage('json'))
-      addToast(getExportFailureStatusMessage('json'), 'error')
-    }
-    setShowExportMenu(false)
-  }
 
   // Saved query functions
   const handleSaveQuery = () => {
@@ -1550,389 +907,6 @@ function App() {
     setSavedQueries((prev) => prev.filter((q) => q.id !== queryId))
     setStatusMessage(getDeletedQueryStatusMessage())
     addToast(getDeletedQueryStatusMessage(), 'info')
-  }
-
-  const openSampleImport = () => {
-    setImportStage('review')
-    const declaredCrs = extractCrsFromFeatureCollection(sampleGeoJson as unknown as Record<string, unknown>)
-    const warnings: WarningRef[] = []
-    if (!declaredCrs) {
-      warnings.push({
-        id: makeId('warning'),
-        code: 'CRS_UNKNOWN',
-        severity: 'caution',
-        scope: 'active',
-        title: 'No CRS metadata found',
-        message: 'Sample GeoJSON does not carry explicit CRS metadata. Coordinates are currently interpreted as WGS84.',
-      })
-    }
-
-    setImportReview({
-      fileName: 'sample-parcels.geojson',
-      format: 'GeoJSON',
-      supportLevel: 'first-class',
-      rowCount: sampleGeoJson.features.length,
-      geometryType: inferGeometryType(sampleGeoJson),
-      spatial: true,
-      crs: declaredCrs ?? 'unknown',
-      warnings,
-      data: sampleGeoJson,
-    })
-  }
-
-  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setImportStage('scanning')
-    const lowerName = file.name.toLowerCase()
-
-    if (lowerName.endsWith('.parquet') || lowerName.endsWith('.geoparquet')) {
-      const warnings: WarningRef[] = [
-        {
-          id: makeId('warning'),
-          code: 'GEOMETRY_DECODE_FAILED',
-          severity: 'caution',
-          scope: 'active',
-          title: 'GeoParquet import',
-          message: 'This GeoParquet import supports schema preview, DuckDB registration, SQL queries, and table inspection. Map preview is shown when geometry can be decoded from the file.',
-        },
-      ]
-
-      try {
-        const buffer = new Uint8Array(await file.arrayBuffer())
-        const db = await getDuckDb()
-        const conn = await db.connect()
-        const tempFileName = `preflight_${makeId('gpq')}.parquet`
-        try {
-          await db.registerFileBuffer(tempFileName, buffer)
-          const preview = await conn.query(`SELECT * FROM read_parquet('${tempFileName}') LIMIT 25`)
-          const count = await conn.query(`SELECT COUNT(*) AS row_count FROM read_parquet('${tempFileName}')`)
-          const previewRows = preview.toArray().map((row) => row.toJSON() as Record<string, unknown>)
-          const rowCount = Number(count.toArray()[0]?.toJSON()?.row_count ?? previewRows.length)
-          const previewColumns = preview.schema.fields.map((field) => field.name)
-          const geometryColumn = previewColumns.find((name) => /geometry|geom|wkb/i.test(name))
-          const previewFeatureCollection = geometryColumn
-            ? rowsToFeatureCollection(previewRows, geometryColumn)
-            : null
-          if (geometryColumn && previewFeatureCollection) {
-            warnings.push({
-              id: makeId('warning'),
-              code: 'GEOMETRY_DECODE_FAILED',
-              severity: 'info',
-              scope: 'historical',
-              title: 'Geometry preview available',
-              message: `A geometry preview was detected from \`${geometryColumn}\` and can be shown on the map during import review.`,
-            })
-          } else if (geometryColumn) {
-            warnings.push({
-              id: makeId('warning'),
-              code: 'GEOMETRY_DECODE_FAILED',
-              severity: 'caution',
-              scope: 'active',
-              title: 'Geometry column detected but preview unavailable',
-              message: `A likely geometry column was detected (\`${geometryColumn}\`), but its preview could not be shown on the map from the current file contents.`,
-            })
-          }
-
-          setImportReview({
-            fileName: file.name,
-            format: 'GeoParquet',
-            supportLevel: 'first-class',
-            rowCount,
-            geometryType: previewFeatureCollection ? inferGeometryType(previewFeatureCollection) ?? 'geometry preview available' : geometryColumn ? 'geometry column present' : 'tabular preview only',
-            spatial: Boolean(previewFeatureCollection),
-            crs: 'unknown',
-            warnings,
-            data: previewFeatureCollection ?? buffer,
-            previewRows,
-            previewColumns,
-            tableName: geometryColumn,
-          })
-          setImportStage('review')
-        } finally {
-          await conn.close()
-        }
-      } catch (error) {
-        setImportReview({
-          fileName: file.name,
-          format: 'GeoParquet',
-          supportLevel: 'partial',
-          spatial: false,
-          warnings: [
-            {
-              id: makeId('warning'),
-              code: 'GEOMETRY_DECODE_FAILED',
-              severity: 'blocking',
-              scope: 'active',
-              title: 'GeoParquet preflight failed',
-              message: error instanceof Error ? error.message : 'Unknown GeoParquet preflight error',
-            },
-          ],
-          data: null,
-        })
-        setImportStage('review')
-      }
-      return
-    }
-
-    const text = await file.text()
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(text)
-    } catch {
-      setImportReview({
-        fileName: file.name,
-        format: 'Unknown',
-        supportLevel: 'unsupported',
-        spatial: false,
-        warnings: [
-          {
-            id: makeId('warning'),
-            code: 'GEOMETRY_DECODE_FAILED',
-            severity: 'blocking',
-            scope: 'active',
-            title: 'Could not parse file',
-            message: 'The selected file is not valid JSON. This import flow supports GeoJSON and basic GeoParquet files.',
-          },
-        ],
-        data: null,
-      })
-      setImportStage('review')
-      return
-    }
-
-    const warnings: WarningRef[] = []
-    const spatial = isFeatureCollection(parsed)
-    const parsedFeatureCollection: GeoJSON.FeatureCollection | null = spatial
-      ? (parsed as GeoJSON.FeatureCollection)
-      : null
-    const declaredCrs = spatial
-      ? extractCrsFromFeatureCollection(parsed as unknown as Record<string, unknown>)
-      : undefined
-    if (!spatial) {
-      warnings.push({
-        id: makeId('warning'),
-        code: 'GEOMETRY_DECODE_FAILED',
-        severity: 'blocking',
-        scope: 'active',
-        title: 'Unsupported structure',
-        message: 'This JSON import flow currently accepts GeoJSON FeatureCollection files.',
-      })
-    } else if (!declaredCrs) {
-      warnings.push({
-        id: makeId('warning'),
-        code: 'CRS_UNKNOWN',
-        severity: 'caution',
-        scope: 'active',
-        title: 'No CRS metadata found',
-        message: 'GeoJSON rarely carries CRS metadata. Coordinates are currently interpreted as WGS84 unless you verify otherwise.',
-      })
-    }
-
-    setImportReview({
-      fileName: file.name,
-      format: spatial ? 'GeoJSON' : 'Unknown',
-      supportLevel: spatial ? 'first-class' : 'unsupported',
-      rowCount: parsedFeatureCollection ? parsedFeatureCollection.features.length : undefined,
-      geometryType: parsedFeatureCollection ? inferGeometryType(parsedFeatureCollection) : undefined,
-      spatial,
-      crs: spatial ? (declaredCrs ?? 'unknown') : undefined,
-      warnings,
-      data: parsedFeatureCollection,
-    })
-    setImportStage('review')
-  }
-
-  const confirmImport = (discoveryOverride?: {
-    featureCollection: GeoJSON.FeatureCollection
-    name: string
-    format: string
-    crs: string
-    source?: string
-    trace?: string[]
-    onClose?: () => void
-  }) => {
-    // File import path: requires importReview state
-    if (!discoveryOverride && (!importReview || !importReview.data || importReview.supportLevel === 'unsupported')) return
-    // Discovery path: validate FeatureCollection
-    if (discoveryOverride && !isFeatureCollection(discoveryOverride.featureCollection)) return
-
-    setImporting(true)
-    setImportStage('importing')
-
-    const eventId = makeId('event')
-    const artifactId = makeId('artifact')
-
-    // Resolve values from either importReview or discovery override
-    const artifactName = discoveryOverride
-      ? discoveryOverride.name
-      : importReview!.fileName.replace(/\.[^.]+$/, '')
-    const importFormat = discoveryOverride ? discoveryOverride.format : importReview!.format
-    const importData = discoveryOverride ? discoveryOverride.featureCollection : importReview!.data
-    const importCrs = discoveryOverride ? discoveryOverride.crs : importReview!.crs
-    const importSpatial = true // Discovery vector results are always spatial
-    const importGeometryType = discoveryOverride
-      ? inferGeometryType(discoveryOverride.featureCollection)
-      : importReview!.geometryType
-    const importRowCount = discoveryOverride
-      ? discoveryOverride.featureCollection.features.length
-      : importReview!.rowCount
-
-    const tableName = artifactName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'dataset'
-    const crsProvenance = buildImportCrsProvenance(importCrs === 'unknown' ? undefined : importCrs)
-
-    // Build warnings — discovery imports get a provenance warning from trace
-    const importWarnings: WarningRef[] = discoveryOverride
-      ? [
-          ...(discoveryOverride.trace?.length
-            ? [{
-                id: makeId('warning'),
-                code: 'DISCOVERY_PROVENANCE',
-                severity: 'info' as const,
-                scope: 'historical' as const,
-                title: 'Discovery provenance',
-                message: discoveryOverride.trace.join('; '),
-              }]
-            : []),
-        ]
-      : importReview!.warnings
-
-    const artifact: Artifact = {
-      id: artifactId,
-      name: artifactName,
-      kind: 'source',
-      outputKind: discoveryOverride ? 'spatial-artifact' : (importReview!.spatial ? 'spatial-artifact' : 'tabular-artifact'),
-      format: importFormat,
-      spatial: discoveryOverride ? true : importReview!.spatial,
-      geometryType: importGeometryType,
-      rowCount: importRowCount,
-      crs: importCrs,
-      crsProvenance,
-      warnings: importWarnings,
-      originEventId: eventId,
-      tableName,
-      data: importData,
-      tableRows: discoveryOverride ? undefined : importReview!.previewRows,
-    }
-
-    const historyEventWarnings = importWarnings.map((warning) => ({ ...warning, scope: 'historical' as const }))
-
-    const historyEvent: HistoryEvent = {
-      id: eventId,
-      type: 'import',
-      timestamp: new Date().toISOString(),
-      summary: discoveryOverride
-        ? `Imported ${artifact.name} from ${discoveryOverride.source ?? 'discovery'}`
-        : `Imported ${artifact.name} from ${importFormat}`,
-      inputArtifactIds: [],
-      outputArtifactIds: [artifactId],
-      warnings: historyEventWarnings,
-      details: discoveryOverride
-        ? {
-            format: importFormat,
-            rowCount: importRowCount,
-            geometryType: importGeometryType,
-            crs: importCrs,
-            source: discoveryOverride.source,
-          }
-        : {
-            format: importFormat,
-            rowCount: importRowCount,
-            geometryType: importGeometryType,
-            crs: importCrs,
-          },
-    }
-
-    void (async () => {
-      let artifactData = importData
-      let artifactGeometryType = importGeometryType
-      let artifactSpatial = discoveryOverride ? true : importReview!.spatial
-      let artifactRenderIssue = !discoveryOverride && importReview!.format === 'GeoParquet' && !importReview!.spatial
-        ? 'This GeoParquet layer is registered and queryable, but map rendering is not available for the detected geometry column.'
-        : undefined
-
-      try {
-        const db = await getDuckDb()
-        const conn = await db.connect()
-        try {
-          if (!discoveryOverride && importReview!.format === 'GeoParquet' && importReview!.data instanceof Uint8Array) {
-            const parquetName = `${tableName}.parquet`
-            await db.registerFileBuffer(parquetName, importReview!.data)
-            await conn.query(`DROP TABLE IF EXISTS ${tableName}`)
-            await conn.query(`CREATE TABLE ${tableName} AS SELECT * FROM read_parquet('${parquetName}')`)
-            
-            // For GeoParquet, fetch full geometry from the registered table for map rendering
-            const geometryColumn = importReview!.tableName
-            if (geometryColumn) {
-              const fullGeometry = await fetchFullGeometryFromTable(tableName, geometryColumn)
-              if (fullGeometry && fullGeometry.featureCollection) {
-                artifactData = fullGeometry.featureCollection
-                artifactGeometryType = fullGeometry.geometryType
-                artifactSpatial = true
-                artifactRenderIssue = undefined
-              }
-            }
-          } else if (isFeatureCollection(artifact.data)) {
-            const rows = (artifact.data as GeoJSON.FeatureCollection).features.map((feature) => ({
-              ...(feature.properties ?? {}),
-              geometry: JSON.stringify(feature.geometry),
-            }))
-            await db.registerFileText(`${tableName}.json`, JSON.stringify(rows))
-            await conn.query(`DROP TABLE IF EXISTS ${tableName}`)
-            conn.insertJSONFromPath(`${tableName}.json`, { name: tableName })
-          }
-        } finally {
-          await conn.close()
-        }
-
-        // Update artifact with full geometry data
-        const updatedArtifact: Artifact = {
-          ...artifact,
-          data: artifactData,
-          spatial: artifactSpatial,
-          geometryType: artifactGeometryType,
-          renderIssue: artifactRenderIssue,
-        }
-
-        // If the GeoParquet path successfully produced renderable map features,
-        // clear the early import warning that claimed map rendering was not available.
-        if (!discoveryOverride && updatedArtifact.format === 'GeoParquet' && updatedArtifact.spatial && isFeatureCollection(updatedArtifact.data)) {
-          updatedArtifact.warnings = updatedArtifact.warnings.filter(
-            (warning) => warning.title !== 'GeoParquet import'
-          )
-        }
-
-        pushArtifactSnapshot(`Import: ${updatedArtifact.name}`)
-        setArtifacts((current) => [...current, updatedArtifact])
-        setHistory((current) => [historyEvent, ...current])
-        setSelectedArtifactId(artifactId)
-        setBottomTab('table')
-
-        if (discoveryOverride) {
-          // Discovery path: close panel and clean up
-          discoveryOverride.onClose?.()
-        } else {
-          // File import path: reset import review state
-          setImportReview(null)
-          setImportStage('idle')
-        }
-
-        setStatusMessage(`Imported ${artifact.name}`)
-        addToast(`Imported ${artifact.name}`, 'success')
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown import/runtime error'
-        setStatusMessage(`Import failed: ${message}. Review the import sheet and either fix the file or cancel the transaction.`)
-        addToast(`Import failed: ${message}. Review the import sheet and either fix the file or cancel the transaction.`, 'error')
-        if (discoveryOverride) {
-          discoveryOverride.onClose?.()
-        } else {
-          setImportStage('review')
-        }
-      } finally {
-        setImporting(false)
-      }
-    })()
   }
 
   // Slice 6a: Discovery import handler — routes into confirmImport with override
