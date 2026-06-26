@@ -95,5 +95,11 @@ export default defineConfig({
     fs: {
       allow: ['..', 'dist'],
     },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
+    },
   },
 })

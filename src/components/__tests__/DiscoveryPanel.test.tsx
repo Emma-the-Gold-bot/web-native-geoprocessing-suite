@@ -20,6 +20,7 @@ import type { BBox } from '../../types'
 vi.mock('../../lib/discovery', () => ({
   discover: vi.fn(),
   geocode: vi.fn(),
+  checkDiscoveryHealth: vi.fn().mockResolvedValue(false),
 }))
 
 // Import the mocked module to get typed handles

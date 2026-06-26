@@ -41,13 +41,30 @@ export interface DiscoveryRequest {
   params?: Record<string, unknown>;
 }
 
+const BACKEND_HINT = 'Discovery backend not running. Start it with: cd discovery && uvicorn discovery.server:app --port 8001';
+
+/** Check if the discovery backend is reachable. */
+export async function checkDiscoveryHealth(): Promise<boolean> {
+  try {
+    const resp = await fetch('/api/health');
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Discover spatial data by describing what you need. */
 export async function discover(request: DiscoveryRequest): Promise<DiscoveryResult> {
-  const resp = await fetch('/api/discover', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch('/api/discover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+  } catch (err) {
+    throw new Error(BACKEND_HINT);
+  }
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
     throw new Error(err.detail || `Discovery failed (${resp.status})`);
@@ -57,11 +74,16 @@ export async function discover(request: DiscoveryRequest): Promise<DiscoveryResu
 
 /** Resolve a place name to a bounding box + center. */
 export async function geocode(place: string): Promise<GeocodeResult> {
-  const resp = await fetch('/api/geocode', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ place }),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch('/api/geocode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ place }),
+    });
+  } catch (err) {
+    throw new Error(BACKEND_HINT);
+  }
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
     throw new Error(err.detail || `Geocode failed (${resp.status})`);

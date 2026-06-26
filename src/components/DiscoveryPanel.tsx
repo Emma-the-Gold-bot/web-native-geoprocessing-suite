@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { discover, geocode, type DiscoveryResult as ApiDiscoveryResult, type DiscoveryCandidate } from '../lib/discovery';
+import { discover, geocode, checkDiscoveryHealth, type DiscoveryResult as ApiDiscoveryResult, type DiscoveryCandidate } from '../lib/discovery';
 import type { BBox } from '../types';
-import { MapPin } from 'lucide-react';
+import { MapPin, Wifi, WifiOff, Loader2 } from 'lucide-react';
 
 type PanelState = 'idle' | 'geocoding' | 'confirming' | 'searching' | 'results';
 
@@ -44,8 +44,14 @@ export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }
   const [bbox, setBbox] = useState<BBox | null>(null);
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const queryRef = useRef(query);
   queryRef.current = query;
+
+  // Check backend health on mount
+  useEffect(() => {
+    checkDiscoveryHealth().then(setBackendOnline);
+  }, []);
 
   // Cleanup bbox preview when panel unmounts
   useEffect(() => {
@@ -151,6 +157,35 @@ export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }
 
   return (
     <div style={{ padding: 12 }}>
+      {/* Backend status indicator */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 12 }}>
+        {backendOnline === null ? (
+          <>
+            <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: '#94a3b8' }} />
+            <span style={{ color: '#94a3b8' }}>Checking backend...</span>
+          </>
+        ) : backendOnline ? (
+          <>
+            <Wifi size={12} style={{ color: '#22c55e' }} />
+            <span style={{ color: '#22c55e' }}>Connected</span>
+          </>
+        ) : (
+          <>
+            <WifiOff size={12} style={{ color: '#f59e0b' }} />
+            <span style={{ color: '#f59e0b' }}>Backend offline</span>
+          </>
+        )}
+      </div>
+
+      {/* Offline hint */}
+      {backendOnline === false && (
+        <div className="card" style={{ marginBottom: 12, borderColor: '#f59e0b', background: '#1c1917' }}>
+          <div className="small" style={{ color: '#f59e0b', fontFamily: 'monospace', fontSize: 11 }}>
+            Start the discovery server: cd discovery && uvicorn discovery.server:app --port 8001
+          </div>
+        </div>
+      )}
+
       {/* Source badge — shows pinned source from prefix routing */}
       {source && (
         <div style={{ marginBottom: 8 }}>
@@ -172,7 +207,7 @@ export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }
           <button
             className="primary"
             onClick={state === 'confirming' ? handleConfirmBbox : handleDiscover}
-            disabled={state === 'geocoding' || state === 'searching' || !query.trim()}
+            disabled={state === 'geocoding' || state === 'searching' || !query.trim() || backendOnline === false}
           >
             {state === 'geocoding' ? 'Locating...' : state === 'searching' ? 'Searching...' : state === 'confirming' ? 'Confirm & Search' : 'Discover'}
           </button>
