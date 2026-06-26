@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen, Undo2, Redo2, Download } from 'lucide-react'
 import type { DisplayTransformStatus } from './lib/spatial/display-transform'
 import maplibregl from 'maplibre-gl'
@@ -21,7 +21,20 @@ import {
 } from './lib/layer-controls'
 import { getCurrentNotes, getDeletedQueryStatusMessage, getLoadedQueryStatusMessage, getQueryRenderIssue, getQueryRunStatusMessage, getSeverityLabel, getSuggestedQueryArtifactName, getWarningRecoveryHint, getWarningScope, getWarningScopeLabel, isWarning, buildQueryHistoryEvent } from './lib/product-surface'
 import { getSpatialEngine, getDisplayBounds, needsDisplayTransformation } from './lib/spatial'
-import { BufferDialog, CentroidDialog, ConvexHullDialog, EnvelopeDialog, SimplifyDialog, DissolveDialog, ReprojectDialog, ClipDialog, IntersectDialog, JoinDialog, MeasureDialog } from './components/operations'
+type DialogModule = { [key: string]: import('react').ComponentType<any> }
+const lazyDialog = (loader: () => Promise<DialogModule>, name: string) =>
+  lazy(() => loader().then(mod => ({ default: mod[name] })))
+const BufferDialog = lazyDialog(() => import('./components/operations/BufferDialog'), 'BufferDialog')
+const CentroidDialog = lazyDialog(() => import('./components/operations/CentroidDialog'), 'CentroidDialog')
+const ConvexHullDialog = lazyDialog(() => import('./components/operations/ConvexHullDialog'), 'ConvexHullDialog')
+const EnvelopeDialog = lazyDialog(() => import('./components/operations/EnvelopeDialog'), 'EnvelopeDialog')
+const SimplifyDialog = lazyDialog(() => import('./components/operations/SimplifyDialog'), 'SimplifyDialog')
+const DissolveDialog = lazyDialog(() => import('./components/operations/DissolveDialog'), 'DissolveDialog')
+const ReprojectDialog = lazyDialog(() => import('./components/operations/ReprojectDialog'), 'ReprojectDialog')
+const ClipDialog = lazyDialog(() => import('./components/operations/ClipDialog'), 'ClipDialog')
+const IntersectDialog = lazyDialog(() => import('./components/operations/IntersectDialog'), 'IntersectDialog')
+const JoinDialog = lazyDialog(() => import('./components/operations/JoinDialog'), 'JoinDialog')
+const MeasureDialog = lazyDialog(() => import('./components/operations/MeasureDialog'), 'MeasureDialog')
 import { DiscoveryPanel } from './components/DiscoveryPanel'
 import { RightPanel } from './components/RightPanel'
 import { BottomDock } from './components/BottomDock'
@@ -1425,45 +1438,47 @@ function App() {
         )}
 
         {/* Operation Dialogs */}
-        {activeDialog === 'buffer' && selectedArtifact && (
-          <BufferDialog context={dialogContext} />
-        )}
-        {activeDialog === 'centroid' && selectedArtifact && (
-          <CentroidDialog context={dialogContext} />
-        )}
-        {activeDialog === 'convex-hull' && selectedArtifact && (
-          <ConvexHullDialog context={dialogContext} />
-        )}
-        {activeDialog === 'envelope' && selectedArtifact && (
-          <EnvelopeDialog context={dialogContext} />
-        )}
-        {activeDialog === 'simplify' && selectedArtifact && (
-          <SimplifyDialog context={dialogContext} />
-        )}
-        {activeDialog === 'dissolve' && selectedArtifact && (
-          <DissolveDialog context={dialogContext} />
-        )}
-        {activeDialog === 'area' && selectedArtifact && (
-          <MeasureDialog operationId="area-v1" title="Area Measurement" subtitle={`Measure polygon area for ${selectedArtifact.name} on the narrow area v1 path`} context={dialogContext} />
-        )}
-        {activeDialog === 'perimeter' && selectedArtifact && (
-          <MeasureDialog operationId="perimeter-v1" title="Perimeter Measurement" subtitle={`Measure polygon perimeter for ${selectedArtifact.name} on the narrow perimeter v1 path`} context={dialogContext} />
-        )}
-        {activeDialog === 'compactness' && selectedArtifact && (
-          <MeasureDialog operationId="compactness-v1" title="Compactness Measurement" subtitle={`Measure polygon compactness for ${selectedArtifact.name} on the narrow compactness v1 path`} context={dialogContext} />
-        )}
-        {activeDialog === 'reproject' && selectedArtifact && (
-          <ReprojectDialog context={dialogContext} />
-        )}
-        {activeDialog === 'clip' && selectedArtifact && (
-          <ClipDialog context={dialogContext} />
-        )}
-        {activeDialog === 'intersect' && selectedArtifact && (
-          <IntersectDialog context={dialogContext} />
-        )}
-        {activeDialog === 'join' && selectedArtifact && (
-          <JoinDialog context={dialogContext} />
-        )}
+        <Suspense fallback={<div className="import-overlay"><div className="card">Loading…</div></div>}>
+          {activeDialog === 'buffer' && selectedArtifact && (
+            <BufferDialog context={dialogContext} />
+          )}
+          {activeDialog === 'centroid' && selectedArtifact && (
+            <CentroidDialog context={dialogContext} />
+          )}
+          {activeDialog === 'convex-hull' && selectedArtifact && (
+            <ConvexHullDialog context={dialogContext} />
+          )}
+          {activeDialog === 'envelope' && selectedArtifact && (
+            <EnvelopeDialog context={dialogContext} />
+          )}
+          {activeDialog === 'simplify' && selectedArtifact && (
+            <SimplifyDialog context={dialogContext} />
+          )}
+          {activeDialog === 'dissolve' && selectedArtifact && (
+            <DissolveDialog context={dialogContext} />
+          )}
+          {activeDialog === 'area' && selectedArtifact && (
+            <MeasureDialog operationId="area-v1" title="Area Measurement" subtitle={`Measure polygon area for ${selectedArtifact.name} on the narrow area v1 path`} context={dialogContext} />
+          )}
+          {activeDialog === 'perimeter' && selectedArtifact && (
+            <MeasureDialog operationId="perimeter-v1" title="Perimeter Measurement" subtitle={`Measure polygon perimeter for ${selectedArtifact.name} on the narrow perimeter v1 path`} context={dialogContext} />
+          )}
+          {activeDialog === 'compactness' && selectedArtifact && (
+            <MeasureDialog operationId="compactness-v1" title="Compactness Measurement" subtitle={`Measure polygon compactness for ${selectedArtifact.name} on the narrow compactness v1 path`} context={dialogContext} />
+          )}
+          {activeDialog === 'reproject' && selectedArtifact && (
+            <ReprojectDialog context={dialogContext} />
+          )}
+          {activeDialog === 'clip' && selectedArtifact && (
+            <ClipDialog context={dialogContext} />
+          )}
+          {activeDialog === 'intersect' && selectedArtifact && (
+            <IntersectDialog context={dialogContext} />
+          )}
+          {activeDialog === 'join' && selectedArtifact && (
+            <JoinDialog context={dialogContext} />
+          )}
+        </Suspense>
       </main>
 
       <RightPanel {...rightPanelProps} />

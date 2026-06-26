@@ -60,7 +60,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: undefined,
+        manualChunks: {
+          'geos-wasm': ['geos-wasm'],
+          'proj-wasm': ['proj-wasm'],
+          'duckdb': ['@duckdb/duckdb-wasm'],
+          'maplibre': ['maplibre-gl'],
+          'vendor': ['react', 'react-dom', 'lucide-react'],
+        },
       },
     },
   },
