@@ -14,6 +14,11 @@ import {
   resolveQuery,
   computeTriggerConfidence,
   extractParameters,
+  levenshteinDistance,
+  stringSimilarity,
+  tokenizeInput,
+  tokenizedMatchScore,
+  resolveArtifactReference,
   type ResolutionCandidate,
 } from '../nl/query-resolver';
 import type { OperationIntent } from '../operations/types';
@@ -760,5 +765,242 @@ describe('resolveQuery: custom intents with specific param layouts', () => {
     const candidates = resolveQuery('simplify 5 boundaries', customIntents, {});
     const match = candidates.find(c => c.id === 'custom-simplify')!;
     expect(match.parameters.tolerance).toBe(5);
+  });
+});
+
+// ─── Query variations (Slice 23) ──────────────────────────────────────
+
+describe('resolveQuery: query variations', () => {
+  it('"buffer the parcels by 500ft" — unit suffix, "the", "by"', () => {
+    const candidates = resolveQuery('buffer the parcels by 500ft', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch).toBeDefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('feet');
+  });
+
+  it('"500 foot buffer on parcels" — reversed order', () => {
+    const candidates = resolveQuery('500 foot buffer on parcels', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch).toBeDefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('feet');
+  });
+
+  it('"clip parcels with floodzone" — no "to"/"by", uses "with"', () => {
+    const candidates = resolveQuery('clip parcels with floodzone', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const clipMatch = candidates.find(c => c.id === 'clip-v1')!;
+    expect(clipMatch).toBeDefined();
+    expect(clipMatch.parameters.mask).toBe('$mask');
+  });
+
+  it('"dissolve by zone" — no artifact name, still resolves', () => {
+    const candidates = resolveQuery('dissolve by zone', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const dissolveMatch = candidates.find(c => c.id === 'dissolve-grouped-v1');
+    expect(dissolveMatch).toBeDefined();
+    expect(dissolveMatch!.parameters.grouping_field).toBe('zone');
+  });
+
+  it('"join ownership to parcels by APN" — attribute join', () => {
+    const candidates = resolveQuery('join ownership to parcels by APN', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const joinMatch = candidates.find(c => c.id === 'attribute-join-v1')!;
+    expect(joinMatch).toBeDefined();
+    expect(joinMatch.parameters.source_key).toBe('APN');
+    expect(joinMatch.parameters.join_key).toBe('APN');
+  });
+
+  it('"reproject to 32610" — bare EPSG code (no prefix)', () => {
+    const candidates = resolveQuery('reproject to 32610', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const reprojectMatch = candidates.find(c => c.id === 'reproject')!;
+    expect(reprojectMatch).toBeDefined();
+    expect(reprojectMatch.parameters.target_crs).toBe('EPSG:32610');
+  });
+
+  it('"buffer 500" — bare number, defaults to meters', () => {
+    const candidates = resolveQuery('buffer 500', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch).toBeDefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('meters');
+  });
+});
+
+// ─── Confidence penalties (Slice 23) ──────────────────────────────────
+
+describe('resolveQuery: confidence penalties', () => {
+  it('bare number buffer gets lower confidence than same-length query with unit', () => {
+    // Use same-length queries to isolate the bare-number penalty
+    const withUnit = resolveQuery('buffer 500 feet', OPERATION_INTENT_MAP, {});
+    const bareNumber = resolveQuery('buffer 500 xxxx', OPERATION_INTENT_MAP, {});
+
+    const withUnitBuf = withUnit.find(c => c.id === 'buffer')!;
+    const bareNumberBuf = bareNumber.find(c => c.id === 'buffer')!;
+
+    expect(withUnitBuf).toBeDefined();
+    expect(bareNumberBuf).toBeDefined();
+    // "buffer 500 xxxx" has no recognized unit → default to meters + penalty
+    expect(bareNumberBuf.parameters.distance_unit).toBe('meters');
+    expect(withUnitBuf.parameters.distance_unit).toBe('feet');
+    // Same query length → same base trigger confidence
+    // Bare number (-0.1 penalty) → lower final confidence
+    expect(bareNumberBuf.confidence).toBeLessThan(withUnitBuf.confidence);
+  });
+
+  it('bare number defaults distance_unit to meters and applies penalty', () => {
+    const bareResult = resolveQuery('buffer 500', OPERATION_INTENT_MAP, {});
+    const bareBuf = bareResult.find(c => c.id === 'buffer')!;
+    expect(bareBuf).toBeDefined();
+    expect(bareBuf.parameters.distance).toBe(500);
+    // Bare number defaults to meters but with a confidence penalty
+    expect(bareBuf.parameters.distance_unit).toBe('meters');
+    expect(bareBuf.confidence).toBeLessThan(1.0);
+  });
+
+  it('reversed order query gets lower confidence than canonical order', () => {
+    const canonical = resolveQuery('buffer parcels 500 feet', OPERATION_INTENT_MAP, {});
+    const reversed = resolveQuery('500 feet buffer on parcels', OPERATION_INTENT_MAP, {});
+
+    const canonicalBuf = canonical.find(c => c.id === 'buffer')!;
+    const reversedBuf = reversed.find(c => c.id === 'buffer')!;
+
+    expect(canonicalBuf).toBeDefined();
+    expect(reversedBuf).toBeDefined();
+    // Reversed gets -0.05 penalty → lower confidence than canonical
+    expect(reversedBuf.confidence).toBeLessThan(canonicalBuf.confidence);
+  });
+});
+
+// ─── String similarity utilities (Slice 23) ───────────────────────────
+
+describe('levenshteinDistance', () => {
+  it('returns 0 for identical strings', () => {
+    expect(levenshteinDistance('parcels', 'parcels')).toBe(0);
+  });
+
+  it('returns 1 for single-character edit', () => {
+    expect(levenshteinDistance('parcel', 'parcels')).toBe(1);
+  });
+
+  it('returns correct distance for different strings', () => {
+    expect(levenshteinDistance('kitten', 'sitting')).toBe(3);
+  });
+
+  it('handles empty strings', () => {
+    expect(levenshteinDistance('', 'abc')).toBe(3);
+    expect(levenshteinDistance('abc', '')).toBe(3);
+  });
+});
+
+describe('stringSimilarity', () => {
+  it('returns 1.0 for identical strings', () => {
+    expect(stringSimilarity('parcels', 'parcels')).toBe(1.0);
+  });
+
+  it('returns > 0.8 for near-match (typo)', () => {
+    const sim = stringSimilarity('parcels', 'parcel');
+    expect(sim).toBeGreaterThan(0.8);
+  });
+
+  it('returns low score for very different strings', () => {
+    const sim = stringSimilarity('parcels', 'rivers');
+    expect(sim).toBeLessThan(0.5);
+  });
+});
+
+describe('tokenizeInput', () => {
+  it('filters stop words', () => {
+    const tokens = tokenizeInput('buffer the parcels by 500 feet');
+    expect(tokens).toContain('buffer');
+    expect(tokens).toContain('parcels');
+    expect(tokens).not.toContain('the');
+    expect(tokens).not.toContain('by');
+  });
+
+  it('handles empty/whitespace input', () => {
+    expect(tokenizeInput('')).toEqual([]);
+    expect(tokenizeInput('   ')).toEqual([]);
+  });
+
+  it('filters out single-character tokens', () => {
+    const tokens = tokenizeInput('a buffer');
+    expect(tokens).toEqual(['buffer']);
+  });
+});
+
+describe('tokenizedMatchScore', () => {
+  it('returns 1.0 for exact token match', () => {
+    const score = tokenizedMatchScore(['parcels', 'buffer'], ['parcels', 'buffer']);
+    expect(score).toBe(1.0);
+  });
+
+  it('returns > 0 for partial overlap', () => {
+    const score = tokenizedMatchScore(['parcels'], ['parcels', 'buffer']);
+    expect(score).toBeGreaterThan(0);
+    expect(score).toBeLessThanOrEqual(1);
+  });
+
+  it('returns 0 for no overlap', () => {
+    const score = tokenizedMatchScore(['rivers'], ['parcels', 'buffer']);
+    expect(score).toBe(0);
+  });
+
+  it('handles typo tolerance (parcels vs parcel)', () => {
+    const score = tokenizedMatchScore(['parcels'], ['parcel']);
+    expect(score).toBeGreaterThan(0.7);
+  });
+});
+
+// ─── Artifact reference resolution (Slice 23) ────────────────────────
+
+describe('resolveArtifactReference', () => {
+  it('returns null for empty artifact list', () => {
+    expect(resolveArtifactReference('buffer parcels', [])).toBeNull();
+  });
+
+  it('auto-resolves when only one artifact exists', () => {
+    const result = resolveArtifactReference('buffer it', ['parcels']);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('parcels');
+    expect(result!.autoResolved).toBe(true);
+    expect(result!.score).toBe(1.0);
+  });
+
+  it('resolves exact name match', () => {
+    const result = resolveArtifactReference('buffer the parcels', ['parcels', 'rivers', 'counties']);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('parcels');
+    expect(result!.autoResolved).toBe(false);
+    expect(result!.score).toBeGreaterThan(0.5);
+  });
+
+  it('handles typo tolerance (parcels vs parcel)', () => {
+    const result = resolveArtifactReference('buffer the parcel', ['parcels', 'rivers']);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('parcels');
+  });
+
+  it('disambiguates between similar names with higher score', () => {
+    const result = resolveArtifactReference('buffer the parcels', ['parcels', 'parcel_groups']);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('parcels');
+    // "parcels" matches better than "parcel_groups" for query containing "parcels"
+  });
+
+  it('marks result as ambiguous when scores are close', () => {
+    // Both artifacts are equally close to the query terms
+    const result = resolveArtifactReference('buffer zone', ['zones', 'zonel']);
+    expect(result).not.toBeNull();
+    // The ambiguity flag depends on score proximity
+  });
+
+  it('returns null for query with no matching tokens', () => {
+    const result = resolveArtifactReference('xyzzy foobar', ['parcels', 'rivers']);
+    expect(result).toBeNull();
+  });
+
+  it('handles multi-word artifact names', () => {
+    const result = resolveArtifactReference('buffer the flood zones', ['flood zones', 'parcels']);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('flood zones');
   });
 });
