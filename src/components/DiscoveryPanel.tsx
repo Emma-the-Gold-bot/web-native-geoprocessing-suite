@@ -167,7 +167,7 @@ export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }
         ) : backendOnline ? (
           <>
             <Wifi size={12} style={{ color: '#22c55e' }} />
-            <span style={{ color: '#22c55e' }}>Connected</span>
+            <span style={{ color: '#22c55e' }}>Discovery API online</span>
           </>
         ) : (
           <>
@@ -263,6 +263,33 @@ export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }
               </button>
             </div>
           </div>
+        )}
+
+        {/* Example search chips — scaffolding for users */}
+        {!source && state === 'idle' && !query && (
+          <>
+            <div className="discovery-chips">
+              {[
+                { label: 'parks & green spaces', query: '@osm parks' },
+                { label: 'water quality data', query: '@ckan water' },
+                { label: 'satellite imagery', query: '@stac sentinel-2' },
+              ].map((chip) => (
+                <button
+                  key={chip.label}
+                  className="discovery-chip"
+                  onClick={() => setQuery(chip.query)}
+                  type="button"
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+            <div className="discovery-sources">
+              {['OpenStreetMap', 'Data Portals', 'Satellite', 'ArcGIS'].map((src) => (
+                <span key={src} className="discovery-source-badge">{src}</span>
+              ))}
+            </div>
+          </>
         )}
       </div>
 

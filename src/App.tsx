@@ -3368,12 +3368,11 @@ function App() {
               <h2 className="panel-title">SQL Query</h2>
               <div className="card" style={{ marginBottom: 12 }}>
                 <div className="row">
-                  <strong>Queryable tables</strong>
-                  <span className="badge">{artifacts.filter((artifact) => artifact.tableName).length}</span>
+                  <strong>{artifacts.filter((artifact) => artifact.tableName).length === 0 ? 'No data loaded' : `${artifacts.filter((artifact) => artifact.tableName).length} tables loaded`}</strong>
                 </div>
                 <div className="small muted" style={{ marginTop: 8 }}>
                   {artifacts.filter((artifact) => artifact.tableName).length === 0
-                    ? 'No registered tables yet.'
+                    ? 'Import a GeoJSON file or discover data to enable SQL queries.'
                     : artifacts
                         .filter((artifact) => artifact.tableName)
                         .map((artifact) => `${artifact.tableName} (${artifact.kind})`)
@@ -3381,13 +3380,20 @@ function App() {
                 </div>
                 {artifacts.filter((artifact) => artifact.tableName).length === 0 && (
                   <div className="small muted" style={{ marginTop: 8, fontStyle: 'italic' }}>
-                    Import data or load a sample to enable SQL queries.{' '}
                     <button
                       className="secondary"
                       style={{ padding: '2px 8px', fontSize: 'inherit' }}
                       onClick={() => importFileRef.current?.click()}
                     >
                       Import data
+                    </button>
+                    {' '}or{' '}
+                    <button
+                      className="empty-state-link"
+                      style={{ padding: '2px 8px', fontSize: 'inherit' }}
+                      onClick={() => setActiveSidebar('discover')}
+                    >
+                      discover data
                     </button>
                   </div>
                 )}
@@ -4869,35 +4875,13 @@ function App() {
       <aside className={`right-panel ${rightPanelOpen ? 'open' : ''}`}>
         <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
-            style={{
-              flex: 1,
-              padding: '6px 12px',
-              fontSize: 13,
-              fontWeight: 600,
-              background: rightPanelTab === 'details' ? '#1e293b' : 'transparent',
-              color: rightPanelTab === 'details' ? '#e2e8f0' : '#64748b',
-              border: 'none',
-              borderBottom: rightPanelTab === 'details' ? '2px solid #3b82f6' : '2px solid transparent',
-              cursor: 'pointer',
-              borderRadius: '4px 4px 0 0',
-            }}
+            className={`right-panel-tab ${rightPanelTab === 'details' ? 'active' : ''}`}
             onClick={() => setRightPanelTab('details')}
           >
             Details
           </button>
           <button
-            style={{
-              flex: 1,
-              padding: '6px 12px',
-              fontSize: 13,
-              fontWeight: 600,
-              background: rightPanelTab === 'history' ? '#1e293b' : 'transparent',
-              color: rightPanelTab === 'history' ? '#e2e8f0' : '#64748b',
-              border: 'none',
-              borderBottom: rightPanelTab === 'history' ? '2px solid #3b82f6' : '2px solid transparent',
-              cursor: 'pointer',
-              borderRadius: '4px 4px 0 0',
-            }}
+            className={`right-panel-tab ${rightPanelTab === 'history' ? 'active' : ''}`}
             onClick={() => setRightPanelTab('history')}
           >
             History{history.length > 0 ? ` (${history.length})` : ''}
@@ -4911,7 +4895,7 @@ function App() {
           </button>
         </div>
         {rightPanelTab === 'details' && !selectedArtifact && (
-          <AccordionSection title="Project Summary" defaultOpen={true} badge={formatCount(artifacts.length, 'artifact')}>
+          <AccordionSection title="Project Summary" defaultOpen={true} badge={formatCount(artifacts.length, 'layer')}>
             <div className="small muted" style={{ marginBottom: 8 }}>{statusMessage}</div>
             <div className="actions" style={{ marginTop: 0, gap: 8 }}>
               <label className="secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -5545,12 +5529,11 @@ function App() {
           <div>
             <div className="card" style={{ marginBottom: 12 }}>
               <div className="row">
-                <strong>Queryable tables</strong>
-                <span className="badge">{artifacts.filter((artifact) => artifact.tableName).length}</span>
+                <strong>{artifacts.filter((artifact) => artifact.tableName).length === 0 ? 'No data loaded' : `${artifacts.filter((artifact) => artifact.tableName).length} tables loaded`}</strong>
               </div>
               <div className="small muted" style={{ marginTop: 8 }}>
                 {artifacts.filter((artifact) => artifact.tableName).length === 0
-                  ? 'No registered tables yet.'
+                  ? 'Import a GeoJSON file or discover data to enable SQL queries.'
                   : artifacts
                       .filter((artifact) => artifact.tableName)
                       .map((artifact) => `${artifact.tableName} (${artifact.kind})`)
@@ -5558,13 +5541,20 @@ function App() {
               </div>
               {artifacts.filter((artifact) => artifact.tableName).length === 0 && (
                 <div className="small muted" style={{ marginTop: 8, fontStyle: 'italic' }}>
-                  Import data or load a sample to enable SQL queries.{' '}
                   <button
                     className="secondary"
                     style={{ padding: '2px 8px', fontSize: 'inherit' }}
                     onClick={() => setBottomTab('table')}
                   >
                     Import data
+                  </button>
+                  {' '}or{' '}
+                  <button
+                    className="empty-state-link"
+                    style={{ padding: '2px 8px', fontSize: 'inherit' }}
+                    onClick={() => setActiveSidebar('discover')}
+                  >
+                    discover data
                   </button>
                 </div>
               )}

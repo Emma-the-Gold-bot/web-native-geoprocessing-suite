@@ -61,15 +61,16 @@ export default function LayersPanel({
             <strong>{projectName}</strong>
             <div className="muted small">{statusMessage}</div>
           </div>
-          <span className="badge">{formatCount(artifacts.length, 'artifact')}</span>
+          <span className="badge">{formatCount(artifacts.length, 'layer')}</span>
         </div>
       </div>
 
-      <h3 className="panel-title" style={{ marginTop: 16 }}>Artifacts</h3>
+      <h3 className="panel-title" style={{ marginTop: 16 }}>Layers & Data</h3>
       <div className="artifact-list">
         {artifacts.length === 0 && (
           <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-            <div className="muted small" style={{ marginBottom: 'var(--space-3)' }}>No project artifacts yet. Import data to begin.</div>
+            <div className="muted small" style={{ marginBottom: 'var(--space-2)' }}>No project artifacts yet. Import data to begin.</div>
+            <div className="muted small" style={{ marginBottom: 'var(--space-3)' }}>Import a GeoJSON file or discover data to start building your map.</div>
             <div className="empty-state-actions">
               {onImportFile && (
                 <button className="secondary empty-state-btn" onClick={onImportFile}>
