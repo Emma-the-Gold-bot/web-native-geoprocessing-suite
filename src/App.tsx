@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen, Undo2, Redo2 } from 'lucide-react'
+import { Layers, Search, Plus, MessageSquare, History, Settings, FilePlus, Save, FolderOpen, Undo2, Redo2, Download } from 'lucide-react'
 import type { DisplayTransformStatus } from './lib/spatial/display-transform'
 import maplibregl from 'maplibre-gl'
 import type { Artifact, BBox, HistoryEvent, QueryPreview, SavedQuery, WarningRef, CrsProvenance, CrsConfidence, LayerSettings } from './types'
@@ -528,16 +528,54 @@ function App() {
   handleUndoRef.current = handleUndo
   handleRedoRef.current = handleRedo
 
+  const commandInputRef = useRef<HTMLInputElement>(null)
+  const handleOpenProjectRef = useRef<() => void>(() => {})
+  const handleNewProjectRef = useRef<() => void>(() => {})
+  const toggleSidebarRef = useRef<(mode: SidebarMode) => void>(() => {})
+  const selectedArtifactRef = useRef<Artifact | null>(null)
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey
       if (!mod) return
+
+      // Cmd/Ctrl+S always prevents browser default, even when typing
+      if (e.key === 's') {
+        e.preventDefault()
+        setShowSaveDialog(true)
+        return
+      }
+
+      const target = e.target as HTMLElement
+      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+      if (isTyping) return
+
       if (e.key === 'z' && !e.shiftKey) {
         e.preventDefault()
         handleUndoRef.current()
       } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
         e.preventDefault()
         handleRedoRef.current()
+      } else if (e.key === 'o') {
+        e.preventDefault()
+        handleOpenProjectRef.current()
+      } else if (e.key === 'n') {
+        e.preventDefault()
+        handleNewProjectRef.current()
+      } else if (e.key === 'k') {
+        e.preventDefault()
+        commandInputRef.current?.focus()
+      } else if (e.key === 'b') {
+        e.preventDefault()
+        toggleSidebarRef.current('layers')
+      } else if (e.key === 'e') {
+        e.preventDefault()
+        if (selectedArtifactRef.current) {
+          setShowExportMenu(true)
+        }
+      } else if (e.key === '/') {
+        e.preventDefault()
+        addToast('Shortcuts: ⌘S Save · ⌘O Open · ⌘N New · ⌘K Command bar · ⌘B Layers · ⌘E Export · ⌘⇧Z Redo · ⌘/ Help', 'info')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -562,6 +600,7 @@ function App() {
   function toggleSidebar(mode: SidebarMode) {
     setActiveSidebar(prev => (prev === mode ? null : mode))
   }
+  toggleSidebarRef.current = toggleSidebar
 
   function handleCommandChange(value: string) {
     setCommandInput(value)
@@ -726,6 +765,7 @@ function App() {
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? null,
     [artifacts, selectedArtifactId],
   )
+  selectedArtifactRef.current = selectedArtifact
 
   const selectableSecondaryArtifacts = useMemo(
     () => artifacts.filter((artifact) => artifact.id !== selectedArtifactId && artifact.spatial),
@@ -1502,6 +1542,7 @@ function App() {
     setStatusMessage(`Project "${loaded.name}" loaded successfully`)
     addToast(`Project "${loaded.name}" loaded successfully`, 'success')
   }
+  handleOpenProjectRef.current = handleOpenProject
 
   const handleNewProject = () => {
     if (hasUnsavedChanges) {
@@ -1521,6 +1562,7 @@ function App() {
     setStatusMessage('New project created')
     addToast('New project created', 'success')
   }
+  handleNewProjectRef.current = handleNewProject
 
   // Export functions
   const handleExportGeoJson = () => {
@@ -3149,6 +3191,41 @@ function App() {
             <FolderOpen size={18} strokeWidth={1.5} aria-hidden="true" />
             <span className="btn-text">Open Project</span>
           </button>
+          {selectedArtifact && (
+            <div style={{ position: 'relative' }}>
+              <button
+                className="secondary"
+                onClick={() => setShowExportMenu(prev => !prev)}
+                disabled={selectedArtifactExportOptions.length === 0}
+                title={selectedArtifactExportOptions.length === 0 ? 'No export formats available' : 'Export selected artifact'}
+                aria-label="Export"
+              >
+                <Download size={18} strokeWidth={1.5} aria-hidden="true" />
+                <span className="btn-text">Export</span>
+              </button>
+              {showExportMenu && selectedArtifactExportOptions.length > 0 && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowExportMenu(false)} />
+                  <div className="export-dropdown" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 100 }}>
+                    {selectedArtifactExportOptions.map((option) => (
+                      <button
+                        key={option.kind}
+                        className="export-option"
+                        onClick={() => {
+                          if (option.kind === 'geojson') handleExportGeoJson()
+                          else if (option.kind === 'json') handleExportJson()
+                        }}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'inherit', padding: '8px 12px', cursor: 'pointer', fontSize: 'var(--text-sm)' }}
+                      >
+                        <strong>{option.label}</strong>
+                        <div className="small muted" style={{ marginTop: 2 }}>{option.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <button
             className="secondary"
             title="Settings"
@@ -5200,6 +5277,7 @@ function App() {
         <input
           type="text"
           className="command-bar-input"
+          ref={commandInputRef}
           placeholder="Ask anything…   / SQL   @osm @ckan @stac"
           value={commandInput}
           onChange={(e) => handleCommandChange(e.target.value)}
