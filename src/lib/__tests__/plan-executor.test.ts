@@ -508,33 +508,40 @@ describe('executePlan: topology operations', () => {
     expect(result.errors[0]).toContain('Missing secondary artifact');
   });
 
-  it('attribute-join via topology path returns UNSUPPORTED error (the bug)', async () => {
-    // The attribute-join-v1 is registered as topology-two-input but the executeStep
-    // function has a branch that returns UNSUPPORTED when hit through this path
+  it('attribute-join-v1 executes via executeAttributeJoinStep in the main loop', async () => {
     const step = makeStep({
       operationId: 'attribute-join-v1',
       params: { source_key: 'APN', join_key: 'APN' },
       inputArtifacts: ['parcels-1', 'floodzone-1'],
+      outputName: 'joined_output',
     });
     const plan = makePlan({ steps: [step] });
     const ctx = makeContext();
 
-    // The topology executor's callback should return UNSUPPORTED for attribute-join
-    mockExecuteTopologyOperation.mockImplementation(async (params: any) => {
-      // Simulate calling the executeTopology callback with dummy inputs
-      const dummyInput = {
-        type: 'feature-collection',
-        data: { type: 'FeatureCollection', features: [] },
-        crsState: { status: 'known', crs: 'EPSG:4326' },
-      };
-      const result = await params.executeTopology(dummyInput, dummyInput);
-      return { error: result.errors[0]?.message || 'no output' };
+    mockExecuteAttributeJoinOperation.mockResolvedValue({
+      artifact: makeArtifact({ id: 'joined-1', name: 'joined_output', kind: 'derived' }),
+      historyEvent: undefined,
     });
 
     const result = await executePlan(plan, ctx);
-    // The attribute-join through the topology path returns UNSUPPORTED
-    expect(result.success).toBe(false);
-    expect(result.errors[0]).toContain('not implemented');
+
+    // Attribute join now succeeds via the main executePlan loop
+    expect(result.success).toBe(true);
+    expect(result.artifacts).toHaveLength(1);
+    expect(result.artifacts[0].id).toBe('joined-1');
+
+    // executeAttributeJoinOperation was called with the correct args
+    expect(mockExecuteAttributeJoinOperation).toHaveBeenCalledWith({
+      sourceArtifact: parcels,
+      secondaryArtifact: floodzone,
+      sourceKey: 'APN',
+      secondaryKey: 'APN',
+      selectedFields: undefined,
+      outputName: 'joined_output',
+    });
+
+    // executeTopologyOperation was NOT called (attribute-join bypasses it)
+    expect(mockExecuteTopologyOperation).not.toHaveBeenCalled();
   });
 });
 

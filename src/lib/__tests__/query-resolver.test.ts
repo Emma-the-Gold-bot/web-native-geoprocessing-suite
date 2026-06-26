@@ -7,10 +7,7 @@
  * - extractParameters: public API for parameter extraction
  * - Canonical queries as test cases
  * - Edge cases: empty query, unknown ops, ambiguous triggers
- *
- * NOTE: Some parameter extraction behavior documents known limitations
- * in the index-based number assignment (numbers[paramArrayIndex] is used
- * rather than a sequential numeric counter). Tests document this as-is.
+ * - Operation-specific parameter extraction with regex patterns
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -102,6 +99,19 @@ describe('computeTriggerConfidence', () => {
     const score = computeTriggerConfidence('change crs to wgs84', ['change CRS']);
     expect(score).toBe(0);
   });
+
+  it('fuzzy-matches multi-word triggers with words separated by other words', () => {
+    // "dissolve by" trigger should fuzzy-match "dissolve parcels by zone"
+    const score = computeTriggerConfidence('dissolve parcels by zone', ['dissolve by']);
+    expect(score).toBeGreaterThan(0);
+    expect(score).toBeLessThanOrEqual(1);
+  });
+
+  it('fuzzy score is lower than exact match for same trigger', () => {
+    const exact = computeTriggerConfidence('dissolve by zone', ['dissolve by']);
+    const fuzzy = computeTriggerConfidence('dissolve parcels by zone', ['dissolve by']);
+    expect(exact).toBeGreaterThan(fuzzy);
+  });
 });
 
 // ─── resolveQuery: Basic trigger matching ─────────────────────────────
@@ -135,7 +145,6 @@ describe('resolveQuery: trigger matching', () => {
   });
 
   it("matches 'dissolve-grouped-v1' for 'dissolve by' contiguous trigger", () => {
-    // The trigger "dissolve by" must appear as a contiguous substring
     const candidates = resolveQuery('dissolve by owner name', OPERATION_INTENT_MAP, {});
     const dissolveMatch = candidates.find(c => c.id === 'dissolve-grouped-v1');
     expect(dissolveMatch).toBeDefined();
@@ -195,66 +204,61 @@ describe('resolveQuery: trigger matching', () => {
 // ─── resolveQuery: Parameter extraction ──────────────────────────────
 
 describe('resolveQuery: parameter extraction', () => {
-  // The number extraction uses numbers[parameterArrayIndex] so a number param
-  // at index 1 (after a non-number param at index 0) won't find numbers[1]
-  // when only one number is present. These tests document that behavior and
-  // also test working extraction with custom intents.
-
-  it('extracts distance when number param is first (custom intent workaround)', () => {
-    const customIntents: Record<string, OperationIntent> = {
-      'custom-buffer': {
-        triggers: ['buffer'],
-        description: 'Buffer features',
-        parameters: [
-          { name: 'distance', type: 'number', required: true, description: 'Buffer distance' },
-          { name: 'source', type: 'artifact', required: true, description: 'Layer to buffer', role: 'source' },
-        ],
-        typical_use: 'Proximity',
-        examples: [],
-      },
-    };
-    const candidates = resolveQuery('buffer 500 feet parcels', customIntents, {});
-    const match = candidates.find(c => c.id === 'custom-buffer')!;
-    expect(match).toBeDefined();
-    expect(match.parameters.distance).toBe(500);
-    expect(match.parameters.distance_unit).toBe('feet');
-  });
-
-  it('extracts tolerance when number param is first (custom intent workaround)', () => {
-    const customIntents: Record<string, OperationIntent> = {
-      'custom-simplify': {
-        triggers: ['simplify'],
-        description: 'Simplify',
-        parameters: [
-          { name: 'tolerance', type: 'number', required: true, description: 'Tolerance' },
-          { name: 'source', type: 'artifact', required: true, description: 'Layer', role: 'source' },
-        ],
-        typical_use: 'Simplification',
-        examples: [],
-      },
-    };
-    const candidates = resolveQuery('simplify 5 boundaries', customIntents, {});
-    const match = candidates.find(c => c.id === 'custom-simplify')!;
-    expect(match.parameters.tolerance).toBe(5);
-  });
-
-  it('documents index-alignment limitation: standard buffer distance not extracted', () => {
-    // Buffer intent: source(0, artifact), distance(1, number). numbers[1]=undefined.
+  it('extracts distance with number and unit for buffer', () => {
     const candidates = resolveQuery('buffer parcels 500 feet', OPERATION_INTENT_MAP, {});
     const bufferMatch = candidates.find(c => c.id === 'buffer')!;
     expect(bufferMatch).toBeDefined();
-    expect(bufferMatch.parameters.distance).toBeUndefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('feet');
   });
 
-  it('documents index-alignment limitation: standard simplify tolerance not extracted', () => {
+  it('extracts distance with unit suffix without spaces (500ft)', () => {
+    const candidates = resolveQuery('buffer parcels 500ft', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch).toBeDefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('feet');
+  });
+
+  it('extracts distance with unit suffix without spaces (500feet)', () => {
+    const candidates = resolveQuery('buffer parcels 500feet', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch).toBeDefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('feet');
+  });
+
+  it('extracts distance with unit suffix without spaces (10m)', () => {
+    const candidates = resolveQuery('buffer parcels 10m', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch).toBeDefined();
+    expect(bufferMatch.parameters.distance).toBe(10);
+    expect(bufferMatch.parameters.distance_unit).toBe('meters');
+  });
+
+  it('extracts distance in reversed order (500 foot buffer on parcels)', () => {
+    const candidates = resolveQuery('500 foot buffer on parcels', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch).toBeDefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('feet');
+  });
+
+  it('extracts tolerance for simplify', () => {
     const candidates = resolveQuery('simplify boundaries with tolerance 5', OPERATION_INTENT_MAP, {});
     const simplifyMatch = candidates.find(c => c.id === 'simplify-v1')!;
     expect(simplifyMatch).toBeDefined();
-    expect(simplifyMatch.parameters.tolerance).toBeUndefined();
+    expect(simplifyMatch.parameters.tolerance).toBe(5);
   });
 
-  it('extracts EPSG CRS for reproject', () => {
+  it('extracts EPSG CRS for reproject (with colon)', () => {
     const candidates = resolveQuery('reproject parcels to EPSG:32610', OPERATION_INTENT_MAP, {});
+    const reprojectMatch = candidates.find(c => c.id === 'reproject')!;
+    expect(reprojectMatch.parameters.target_crs).toBe('EPSG:32610');
+  });
+
+  it('extracts EPSG CRS for reproject (with space instead of colon)', () => {
+    const candidates = resolveQuery('reproject parcels to EPSG 32610', OPERATION_INTENT_MAP, {});
     const reprojectMatch = candidates.find(c => c.id === 'reproject')!;
     expect(reprojectMatch.parameters.target_crs).toBe('EPSG:32610');
   });
@@ -289,13 +293,28 @@ describe('resolveQuery: parameter extraction', () => {
     expect(intersectMatch.parameters.overlay).toBe('$overlay');
   });
 
-  it('does NOT extract join_table role when underscore doesnt match space in query', () => {
-    // Role 'join_table' → split('-').join(' ') → 'join_table' (underscore preserved)
-    // Query has "join table" (space), not "join_table" (underscore) → no match
-    const candidates = resolveQuery('join the join table data to parcels', OPERATION_INTENT_MAP, {});
+  it('extracts overlay for intersect from "with" preposition', () => {
+    const candidates = resolveQuery('intersect parcels with floodzone', OPERATION_INTENT_MAP, {});
+    const intersectMatch = candidates.find(c => c.id === 'intersect-v1')!;
+    expect(intersectMatch).toBeDefined();
+    expect(intersectMatch.parameters.overlay).toBe('$overlay');
+  });
+
+  it('extracts grouping_field from "dissolve parcels by zone"', () => {
+    const candidates = resolveQuery('dissolve parcels by zone', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
+    const dissolveMatch = candidates.find(c => c.id === 'dissolve-grouped-v1');
+    expect(dissolveMatch).toBeDefined();
+    expect(dissolveMatch!.parameters.grouping_field).toBe('zone');
+  });
+
+  it('extracts join keys from attribute-join query', () => {
+    const candidates = resolveQuery('join ownership to parcels by APN', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
     const joinMatch = candidates.find(c => c.id === 'attribute-join-v1')!;
-    // The roleWords "join_table" is NOT a substring of the lowered query
-    expect(joinMatch.parameters.join_table).toBeUndefined();
+    expect(joinMatch).toBeDefined();
+    expect(joinMatch.parameters.source_key).toBe('APN');
+    expect(joinMatch.parameters.join_key).toBe('APN');
+    expect(joinMatch.parameters.join_table).toBe('$join_table');
+    expect(joinMatch.parameters.source).toBe('$source');
   });
 });
 
@@ -394,28 +413,29 @@ describe('resolveQuery: ranking and sorting', () => {
 // ─── resolveQuery: Canonical queries ──────────────────────────────────
 
 describe('resolveQuery: canonical queries', () => {
-  it('"buffer parcels 500 feet" → buffer operation matched', () => {
+  it('"buffer parcels 500 feet" → buffer with distance=500, distance_unit=feet', () => {
     const candidates = resolveQuery('buffer parcels 500 feet', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
     const bufferMatch = candidates.find(c => c.id === 'buffer')!;
     expect(bufferMatch).toBeDefined();
     expect(bufferMatch.type).toBe('operation');
-    // Document: distance not extracted due to param-index-alignment bug
-    expect(bufferMatch.parameters.distance).toBeUndefined();
+    expect(bufferMatch.parameters.distance).toBe(500);
+    expect(bufferMatch.parameters.distance_unit).toBe('feet');
   });
 
-  it('"intersect parcels with floodzone" → intersect-v1 operation', () => {
+  it('"intersect parcels with floodzone" → intersect-v1 with overlay extracted', () => {
     const candidates = resolveQuery('intersect parcels with floodzone', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
     const intersectMatch = candidates.find(c => c.id === 'intersect-v1')!;
     expect(intersectMatch).toBeDefined();
     expect(intersectMatch.type).toBe('operation');
+    expect(intersectMatch.parameters.overlay).toBe('$overlay');
   });
 
-  it('"dissolve parcels by zone" → dissolve-grouped-v1 NOT matched (trigger "dissolve by" not contiguous)', () => {
-    // "dissolve parcels by zone" lowered = "dissolve parcels by zone"
-    // Trigger "dissolve by" is not a contiguous substring here
+  it('"dissolve parcels by zone" → dissolve-grouped-v1 with grouping_field=zone', () => {
+    // Triggers "dissolve by" fuzzy-matches because "dissolve" and "by" appear in order
     const candidates = resolveQuery('dissolve parcels by zone', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
     const dissolveMatch = candidates.find(c => c.id === 'dissolve-grouped-v1');
-    expect(dissolveMatch).toBeUndefined();
+    expect(dissolveMatch).toBeDefined();
+    expect(dissolveMatch!.parameters.grouping_field).toBe('zone');
   });
 
   it('"dissolve by zone" → dissolve-grouped-v1 matched (contiguous trigger)', () => {
@@ -424,23 +444,21 @@ describe('resolveQuery: canonical queries', () => {
     expect(dissolveMatch).toBeDefined();
   });
 
-  it('"join ownership to parcels by APN" → attribute-join-v1 operation', () => {
+  it('"join ownership to parcels by APN" → attribute-join-v1 with keys extracted', () => {
     const candidates = resolveQuery('join ownership to parcels by APN', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
     const joinMatch = candidates.find(c => c.id === 'attribute-join-v1')!;
     expect(joinMatch).toBeDefined();
     expect(joinMatch.type).toBe('operation');
+    expect(joinMatch.parameters.source_key).toBe('APN');
+    expect(joinMatch.parameters.join_key).toBe('APN');
   });
 
-  it('"reproject parcels to EPSG 32610" → reproject operation matched (no CRS extraction without colon)', () => {
-    // "EPSG 32610" (no colon) doesn't match /EPSG:\d+/ but "reproject" trigger matches
+  it('"reproject parcels to EPSG 32610" → reproject with target_crs=EPSG:32610', () => {
+    // "EPSG 32610" (with space) is now handled by the improved CRS regex
     const candidates = resolveQuery('reproject parcels to EPSG 32610', OPERATION_INTENT_MAP, CHAIN_REGISTRY);
     const reprojectMatch = candidates.find(c => c.id === 'reproject')!;
     expect(reprojectMatch).toBeDefined();
-    // "EPSG" alone matches /EPSG:\d+/i? No — /EPSG:\d+/ requires the colon.
-    // But the trigger list includes "EPSG" which matches the query.
-    // CRS extraction: /EPSG:\d+/i doesn't match "epsg 32610". Next: /WGS84/i no. /UTM/i no. /state plane/i no.
-    // So target_crs is not extracted.
-    expect(reprojectMatch.parameters.target_crs).toBeUndefined();
+    expect(reprojectMatch.parameters.target_crs).toBe('EPSG:32610');
   });
 
   it('"reproject parcels to EPSG:32610" → reproject with correct CRS extracted', () => {
@@ -602,6 +620,34 @@ describe('extractParameters', () => {
     const params = extractParameters('simplify 0.5 boundaries', candidate, customIntents, {});
     expect(params.tolerance).toBe(0.5);
   });
+
+  it('extracts distance in reversed order via public API', () => {
+    const customIntents: Record<string, OperationIntent> = {
+      'test-buffer': {
+        triggers: ['buffer'],
+        description: 'Buffer',
+        parameters: [
+          { name: 'distance', type: 'number', required: true, description: 'Buffer distance' },
+          { name: 'source', type: 'artifact', required: true, description: 'Layer', role: 'source' },
+        ],
+        typical_use: 'Prox',
+        examples: [],
+      },
+    };
+    const candidate: ResolutionCandidate = {
+      type: 'operation',
+      id: 'test-buffer',
+      label: 'Buffer',
+      description: 'Buffer',
+      parameters: {},
+      confidence: 0.9,
+      source: 'trigger-match',
+    };
+
+    const params = extractParameters('500 foot buffer on parcels', candidate, customIntents, {});
+    expect(params.distance).toBe(500);
+    expect(params.distance_unit).toBe('feet');
+  });
 });
 
 // ─── resolveQuery: Multiple candidates ────────────────────────────────
@@ -635,5 +681,84 @@ describe('resolveQuery: multiple candidates', () => {
     const areaMatch = candidates.find(c => c.id === 'area-v1');
     const chainMatch = candidates.find(c => c.id === 'shape-analysis');
     expect(areaMatch || chainMatch).toBeTruthy();
+  });
+});
+
+// ─── resolveQuery: Additional parameter extraction tests ──────────────
+
+describe('resolveQuery: unit suffix variations', () => {
+  it('extracts distance with kilometers', () => {
+    const candidates = resolveQuery('buffer parcels 2 kilometers', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch.parameters.distance).toBe(2);
+    expect(bufferMatch.parameters.distance_unit).toBe('kilometers');
+  });
+
+  it('extracts distance with km (no space)', () => {
+    const candidates = resolveQuery('buffer parcels 2km', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch.parameters.distance).toBe(2);
+    expect(bufferMatch.parameters.distance_unit).toBe('kilometers');
+  });
+
+  it('extracts distance with miles', () => {
+    const candidates = resolveQuery('buffer parcels 1 mile', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch.parameters.distance).toBe(1);
+    expect(bufferMatch.parameters.distance_unit).toBe('miles');
+  });
+
+  it('extracts distance with mi suffix', () => {
+    const candidates = resolveQuery('buffer parcels 1mi', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch.parameters.distance).toBe(1);
+    expect(bufferMatch.parameters.distance_unit).toBe('miles');
+  });
+
+  it('extracts decimal distance values', () => {
+    const candidates = resolveQuery('buffer parcels 1.5 meters', OPERATION_INTENT_MAP, {});
+    const bufferMatch = candidates.find(c => c.id === 'buffer')!;
+    expect(bufferMatch.parameters.distance).toBe(1.5);
+    expect(bufferMatch.parameters.distance_unit).toBe('meters');
+  });
+});
+
+describe('resolveQuery: custom intents with specific param layouts', () => {
+  it('extracts distance when number param is first (custom intent)', () => {
+    const customIntents: Record<string, OperationIntent> = {
+      'custom-buffer': {
+        triggers: ['buffer'],
+        description: 'Buffer features',
+        parameters: [
+          { name: 'distance', type: 'number', required: true, description: 'Buffer distance' },
+          { name: 'source', type: 'artifact', required: true, description: 'Layer to buffer', role: 'source' },
+        ],
+        typical_use: 'Proximity',
+        examples: [],
+      },
+    };
+    const candidates = resolveQuery('buffer 500 feet parcels', customIntents, {});
+    const match = candidates.find(c => c.id === 'custom-buffer')!;
+    expect(match).toBeDefined();
+    expect(match.parameters.distance).toBe(500);
+    expect(match.parameters.distance_unit).toBe('feet');
+  });
+
+  it('extracts tolerance when number param is first (custom intent)', () => {
+    const customIntents: Record<string, OperationIntent> = {
+      'custom-simplify': {
+        triggers: ['simplify'],
+        description: 'Simplify',
+        parameters: [
+          { name: 'tolerance', type: 'number', required: true, description: 'Tolerance' },
+          { name: 'source', type: 'artifact', required: true, description: 'Layer', role: 'source' },
+        ],
+        typical_use: 'Simplification',
+        examples: [],
+      },
+    };
+    const candidates = resolveQuery('simplify 5 boundaries', customIntents, {});
+    const match = candidates.find(c => c.id === 'custom-simplify')!;
+    expect(match.parameters.tolerance).toBe(5);
   });
 });

@@ -147,7 +147,11 @@ async function executeStep(
       if (!secondaryArtifact) {
         return { error: `Missing secondary artifact for ${step.operationId}` };
       }
-      
+
+      if (step.operationId === 'attribute-join-v1') {
+        return executeAttributeJoinStep(step, sourceArtifact, secondaryArtifact);
+      }
+
       return executeTopologyOperation({
         operationId: step.operationId as 'clip-v1' | 'intersect-v1',
         sourceArtifact,
@@ -172,15 +176,6 @@ async function executeStep(
               outputCrs: result.outputCrs,
               warnings: result.warnings || [],
               errors: result.errors || [],
-            };
-          } else if (step.operationId === 'attribute-join-v1') {
-            // Attribute join is handled separately
-            return {
-              success: false,
-              output: undefined,
-              outputCrs: undefined,
-              warnings: [],
-              errors: [{ code: 'UNSUPPORTED_OPERATION', message: 'Attribute join not implemented in this execution path' }],
             };
           }
           return {
