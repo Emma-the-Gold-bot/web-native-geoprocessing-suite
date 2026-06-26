@@ -265,9 +265,70 @@ export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }
           </div>
         )}
 
-        {/* Example search chips — scaffolding for users */}
-        {!source && state === 'idle' && !query && (
-          <>
+        {/* Example search chips — always visible, dimmed when a query is active */}
+        {!source && (
+          <div
+            style={{ opacity: (state === 'idle' && !query) ? 1 : 0.55, transition: 'opacity 0.2s ease', marginTop: 'var(--space-2)' }}
+          >
+            <div className="small muted" style={{ marginBottom: 6 }}>
+              {query ? 'Try searching for…' : 'Try an example search'}
+            </div>
+            <div className="discovery-chips" style={{ marginTop: 0 }}>
+              {[
+                { label: 'parks & green spaces', query: '@osm parks' },
+                { label: 'water quality data', query: '@ckan water' },
+                { label: 'satellite imagery', query: '@stac sentinel-2' },
+              ].map((chip) => (
+                <button
+                  key={chip.label}
+                  className="discovery-chip"
+                  onClick={() => setQuery(chip.query)}
+                  type="button"
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Source badges — always visible to show available sources */}
+        <div className="discovery-sources">
+          {['OpenStreetMap', 'Data Portals', 'Satellite', 'ArcGIS'].map((src) => (
+            <span key={src} className="discovery-source-badge">{src}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="card" style={{ marginBottom: 12, borderColor: '#ef4444' }}>
+          <div className="small" style={{ color: '#ef4444' }}>{error}</div>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {(state === 'searching' || state === 'geocoding') && !result && (
+        <div className="card" style={{ marginBottom: 12, textAlign: 'center', padding: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Loader2 size={16} style={{ animation: 'spin 1s linear infinite', color: '#94a3b8' }} />
+            <span className="small muted">
+              {state === 'geocoding' ? 'Locating area of interest…' : 'Searching…'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* No results state */}
+      {state === 'results' && !error && result && (
+        (result.kind === 'links' && result.candidates && result.candidates.length === 0) ||
+        (result.kind === 'vector' && !result.data)
+      ) && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="small muted" style={{ marginBottom: 8 }}>
+            No results found. Try a different query or source.
+          </div>
+          {!source && (
             <div className="discovery-chips">
               {[
                 { label: 'parks & green spaces', query: '@osm parks' },
@@ -284,24 +345,17 @@ export function DiscoveryPanel({ onImport, onBboxPreview, source, initialQuery }
                 </button>
               ))}
             </div>
-            <div className="discovery-sources">
-              {['OpenStreetMap', 'Data Portals', 'Satellite', 'ArcGIS'].map((src) => (
-                <span key={src} className="discovery-source-badge">{src}</span>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="card" style={{ marginBottom: 12, borderColor: '#ef4444' }}>
-          <div className="small" style={{ color: '#ef4444' }}>{error}</div>
+          )}
         </div>
       )}
 
-      {/* Result */}
+      {/* Result — only render if there's actual data to show */}
       {result && (
+        !(
+          (result.kind === 'links' && result.candidates && result.candidates.length === 0) ||
+          (result.kind === 'vector' && !result.data)
+        )
+      ) && (
         <div className="card" style={{ marginBottom: 12 }}>
           <div className="row">
             <strong>Discovery Result</strong>

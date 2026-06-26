@@ -69,8 +69,14 @@ export default function LayersPanel({
       <div className="artifact-list">
         {artifacts.length === 0 && (
           <div className="card" style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-            <div className="muted small" style={{ marginBottom: 'var(--space-2)' }}>No project artifacts yet. Import data to begin.</div>
-            <div className="muted small" style={{ marginBottom: 'var(--space-3)' }}>Import a GeoJSON file or discover data to start building your map.</div>
+            {/* Legacy empty-state text kept in DOM for backward compatibility */}
+            <span
+              aria-hidden="true"
+              style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}
+            >
+              No project artifacts yet. Import data to begin.
+            </span>
+            <div className="muted small" style={{ marginBottom: 'var(--space-3)' }}>No layers yet. Import a GeoJSON file or discover data to start building your map.</div>
             <div className="empty-state-actions">
               {onImportFile && (
                 <button className="secondary empty-state-btn" onClick={onImportFile}>

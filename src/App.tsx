@@ -163,7 +163,7 @@ function getCrsProvenanceLabel(source: CrsProvenance['source']): string {
     case 'import-metadata':
       return 'imported metadata'
     case 'operation-inherited':
-      return 'inherited from source artifact'
+      return 'inherited from source layer'
     case 'operation-derived':
       return 'derived by operation'
     case 'user-assigned':
@@ -1930,7 +1930,7 @@ function App() {
       let artifactGeometryType = importGeometryType
       let artifactSpatial = discoveryOverride ? true : importReview!.spatial
       let artifactRenderIssue = !discoveryOverride && importReview!.format === 'GeoParquet' && !importReview!.spatial
-        ? 'This GeoParquet artifact is registered and queryable, but map rendering is not available for the detected geometry column.'
+        ? 'This GeoParquet layer is registered and queryable, but map rendering is not available for the detected geometry column.'
         : undefined
 
       try {
@@ -2055,7 +2055,7 @@ function App() {
   const runQuery = async () => {
     const queryableArtifacts = artifacts.filter((artifact) => artifact.tableName)
     if (queryableArtifacts.length === 0) {
-      setQueryError('Import a GeoJSON or GeoParquet dataset first. Queries can only run against registered artifact tables.')
+      setQueryError('Import a GeoJSON or GeoParquet dataset first. Queries can only run against registered layer tables.')
       setStatusMessage('Query blocked: no registered tables exist yet. Import a dataset first.')
       addToast('Query blocked: no registered tables exist yet. Import a dataset first.', 'warning')
       return
@@ -2212,8 +2212,8 @@ function App() {
     setArtifacts((current) => [...current, artifact])
     setHistory((current) => [eventRecord, ...current])
     setSelectedArtifactId(artifactId)
-    setStatusMessage(`Created derived artifact ${artifact.name}`)
-    addToast(`Created derived artifact ${artifact.name}`, 'success')
+    setStatusMessage(`Created derived layer ${artifact.name}`)
+    addToast(`Created derived layer ${artifact.name}`, 'success')
     
     // Mark the preview as materialized so we don't show the "materialize" message anymore
     if (queryPreview) {
@@ -2694,12 +2694,12 @@ function App() {
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(
           result.artifact!.rowCount === 0
-            ? `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlap was found, so the result artifact is intentionally empty.`
+            ? `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlap was found, so the result layer is intentionally empty.`
             : `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}.`
         )
         addToast(
           result.artifact!.rowCount === 0
-            ? `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlap was found, so the result artifact is intentionally empty.`
+            ? `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlap was found, so the result layer is intentionally empty.`
             : `Clip created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}.`,
           'success'
         )
@@ -2784,12 +2784,12 @@ function App() {
         setSelectedArtifactId(result.artifact!.id)
         setStatusMessage(
           result.artifact!.rowCount === 0
-            ? `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlapping area was found, so the result artifact is intentionally empty.`
+            ? `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlapping area was found, so the result layer is intentionally empty.`
             : `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Source attributes were preserved; overlay attributes are not merged in v1.`
         )
         addToast(
           result.artifact!.rowCount === 0
-            ? `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlapping area was found, so the result artifact is intentionally empty.`
+            ? `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. No overlapping area was found, so the result layer is intentionally empty.`
             : `Intersect created: ${result.artifact!.name}. Stored CRS remains ${result.artifact!.crs ?? 'unknown'}. Source attributes were preserved; overlay attributes are not merged in v1.`,
           'success'
         )
@@ -2811,8 +2811,8 @@ function App() {
     const presentation = getAttributeJoinPresentation()
 
     if (!joinArtifact) {
-      setStatusMessage('Please select a join artifact.')
-      addToast('Please select a join artifact.', 'warning')
+      setStatusMessage('Please select a join layer.')
+      addToast('Please select a join layer.', 'warning')
       return
     }
 
@@ -3202,7 +3202,7 @@ function App() {
                 className="secondary"
                 onClick={() => setShowExportMenu(prev => !prev)}
                 disabled={selectedArtifactExportOptions.length === 0}
-                title={selectedArtifactExportOptions.length === 0 ? 'No export formats available' : 'Export selected artifact'}
+                title={selectedArtifactExportOptions.length === 0 ? 'No export formats available' : 'Export selected layer'}
                 aria-label="Export"
               >
                 <Download size={18} strokeWidth={1.5} aria-hidden="true" />
@@ -3307,7 +3307,7 @@ function App() {
         </button>
         <button className={`bottom-tab ${activeSidebar === 'discover' ? 'active' : ''}`} onClick={() => toggleSidebar('discover')}>
           <Search size={20} strokeWidth={1.5} aria-hidden="true" />
-          <span className="bottom-tab-label">Discover</span>
+          <span className="bottom-tab-label">Find</span>
         </button>
         <button className="bottom-tab" onClick={() => importFileRef.current?.click()}>
           <Plus size={20} strokeWidth={1.5} aria-hidden="true" />
@@ -3406,7 +3406,7 @@ function App() {
                 <div className="card danger" style={{ marginTop: 12 }}>
                   <strong>Query failed</strong>
                   <div className="small muted" style={{ marginTop: 6 }}>{queryError}</div>
-                  <div className="small" style={{ marginTop: 6 }}>Recovery: verify table names, SQL syntax, and that the referenced artifact tables are registered in the workspace.</div>
+                  <div className="small" style={{ marginTop: 6 }}>Recovery: verify table names, SQL syntax, and that the referenced layer tables are registered in the workspace.</div>
                 </div>
               )}
               <div className="actions">
@@ -3623,9 +3623,9 @@ function App() {
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label="Source artifact"
+                  label="Source layer"
                   artifact={selectedArtifact}
-                  description="This artifact is the only input on the current buffer path."
+                  description="This layer is the only input on the current buffer path."
                 />
 
                 <div style={{ marginTop: 12 }}>
@@ -3647,7 +3647,7 @@ function App() {
 
                 <OperationOutputSemantics
                   title="Output semantics"
-                  body={presentation?.outputSemantics ?? 'Buffer creates a derived artifact around the source geometry. On the current shipped path it does not broaden claims beyond the validated local runtime, and distance behavior remains approximation-sensitive.'}
+                  body={presentation?.outputSemantics ?? 'Buffer creates a derived layer around the source geometry. On the current shipped path it does not broaden claims beyond the validated local runtime, and distance behavior remains approximation-sensitive.'}
                   outputKind={presentation?.outputKind}
                   outputKindLabel={presentation?.outputKindLabel}
                   outputKindDescription={presentation?.outputKindDescription}
@@ -3680,13 +3680,13 @@ function App() {
 
                 <div>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={bufferName}
                     onChange={(e) => setBufferName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -3732,9 +3732,9 @@ function App() {
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label="Source artifact"
+                  label="Source layer"
                   artifact={selectedArtifact}
-                  description="Centroid runs against the selected source artifact only on the current path."
+                  description="Centroid runs against the selected source layer only on the current path."
                 />
 
                 <div style={{ marginTop: 12 }}>
@@ -3754,7 +3754,7 @@ function App() {
                 />
 
                 <OperationOutputSemantics
-                  body={presentation?.outputSemantics ?? 'Centroid returns a derived point artifact. It stays on the current validated engine seam and does not imply broader support than the current product contract.'}
+                  body={presentation?.outputSemantics ?? 'Centroid returns a derived point layer. It stays on the current validated engine seam and does not imply broader support than the current product contract.'}
                   outputKind={presentation?.outputKind}
                   outputKindLabel={presentation?.outputKindLabel}
                   outputKindDescription={presentation?.outputKindDescription}
@@ -3762,13 +3762,13 @@ function App() {
 
                 <div>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={centroidName}
                     onChange={(e) => setCentroidName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -3814,9 +3814,9 @@ function App() {
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label="Source artifact"
+                  label="Source layer"
                   artifact={selectedArtifact}
-                  description="Convex hull v1 uses only the selected source artifact. It does not accept a secondary layer."
+                  description="Convex hull v1 uses only the selected source layer. It does not accept a secondary layer."
                 />
 
                 <div style={{ marginTop: 12 }}>
@@ -3843,7 +3843,7 @@ function App() {
                 </div>
 
                 <OperationOutputSemantics
-                  body={presentation?.outputSemantics ?? 'Convex hull v1 creates one derived polygon hull artifact in the same stored CRS as the source. It intentionally does not preserve per-feature source attributes and makes no broader claim about lines, points, mixed geometry, or transform-aware execution.'}
+                  body={presentation?.outputSemantics ?? 'Convex hull v1 creates one derived polygon hull layer in the same stored CRS as the source. It intentionally does not preserve per-feature source attributes and makes no broader claim about lines, points, mixed geometry, or transform-aware execution.'}
                   outputKind={presentation?.outputKind}
                   outputKindLabel={presentation?.outputKindLabel}
                   outputKindDescription={presentation?.outputKindDescription}
@@ -3851,13 +3851,13 @@ function App() {
 
                 <div style={{ marginTop: 12 }}>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={convexHullName}
                     onChange={(e) => setConvexHullName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -3903,9 +3903,9 @@ function App() {
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label="Source artifact"
+                  label="Source layer"
                   artifact={selectedArtifact}
-                  description="Envelope v1 uses only the selected source artifact. It does not accept a secondary layer."
+                  description="Envelope v1 uses only the selected source layer. It does not accept a secondary layer."
                 />
 
                 <div style={{ marginTop: 12 }}>
@@ -3932,7 +3932,7 @@ function App() {
                 </div>
 
                 <OperationOutputSemantics
-                  body={presentation?.outputSemantics ?? 'Envelope v1 creates one derived polygon artifact representing the source artifact\'s axis-aligned bounding box in the same stored CRS as the source. It intentionally does not preserve per-feature source attributes and makes no broader claim about minimum rotated rectangles, transform-aware execution, or non-polygon inputs.'}
+                  body={presentation?.outputSemantics ?? 'Envelope v1 creates one derived polygon layer representing the source layer\'s axis-aligned bounding box in the same stored CRS as the source. It intentionally does not preserve per-feature source attributes and makes no broader claim about minimum rotated rectangles, transform-aware execution, or non-polygon inputs.'}
                   outputKind={presentation?.outputKind}
                   outputKindLabel={presentation?.outputKindLabel}
                   outputKindDescription={presentation?.outputKindDescription}
@@ -3940,13 +3940,13 @@ function App() {
 
                 <div style={{ marginTop: 12 }}>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={envelopeName}
                     onChange={(e) => setEnvelopeName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -3985,16 +3985,16 @@ function App() {
               <div className="row">
                 <div>
                   <h3 style={{ margin: 0 }}>Simplify Operation</h3>
-                  <div className="muted small">Simplify {selectedArtifact.name} with a tolerance interpreted in the source artifact\'s stored CRS units</div>
+                  <div className="muted small">Simplify {selectedArtifact.name} with a tolerance interpreted in the source layer's stored CRS units</div>
                 </div>
                 <button className="secondary" onClick={() => setShowSimplifyDialog(false)}>Cancel</button>
               </div>
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label="Source artifact"
+                  label="Source layer"
                   artifact={selectedArtifact}
-                  description="Simplify v1 uses only the selected source artifact. It does not accept a secondary layer."
+                  description="Simplify v1 uses only the selected source layer. It does not accept a secondary layer."
                 />
 
                 <div style={{ marginTop: 12 }}>
@@ -4021,7 +4021,7 @@ function App() {
                 </div>
 
                 <OperationOutputSemantics
-                  body={presentation?.outputSemantics ?? 'Simplify v1 creates a derived polygon or multipolygon artifact in the same stored CRS as the source and preserves source attributes on surviving features. The user-provided tolerance is interpreted in source CRS units. This path does not auto-transform and does not claim broader topology-preserving behavior.'}
+                  body={presentation?.outputSemantics ?? 'Simplify v1 creates a derived polygon or multipolygon layer in the same stored CRS as the source and preserves source attributes on surviving features. The user-provided tolerance is interpreted in source CRS units. This path does not auto-transform and does not claim broader topology-preserving behavior.'}
                   outputKind={presentation?.outputKind}
                   outputKindLabel={presentation?.outputKindLabel}
                   outputKindDescription={presentation?.outputKindDescription}
@@ -4047,13 +4047,13 @@ function App() {
 
                 <div style={{ marginTop: 12 }}>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={simplifyName}
                     onChange={(e) => setSimplifyName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -4085,7 +4085,7 @@ function App() {
               severity: 'blocking' as const,
               scope: 'active' as const,
               title: 'Grouping field required',
-              message: 'Grouped dissolve v1 requires exactly one explicit grouping field from the selected source artifact.',
+              message: 'Grouped dissolve v1 requires exactly one explicit grouping field from the selected source layer.',
             },
           ].filter((warning): warning is WarningRef => Boolean(warning))
           const groupingOptions = getJoinableFieldNames(selectedArtifact)
@@ -4093,12 +4093,12 @@ function App() {
           return (
             <OperationExecutionShell
               title="Grouped Dissolve Operation"
-              subtitle={`Dissolve ${selectedArtifact.name} into one derived artifact with one dissolved feature per grouping value`}
+              subtitle={`Dissolve ${selectedArtifact.name} into one derived layer with one dissolved feature per grouping value`}
               onCancel={() => setShowDissolveDialog(false)}
               sourceSummary={{
-                label: 'Source artifact',
+                label: 'Source layer',
                 artifact: selectedArtifact,
-                description: 'Grouped dissolve v1 uses one selected artifact, one explicit grouping field, and returns one spatial artifact containing one dissolved feature per group.',
+                description: 'Grouped dissolve v1 uses one selected layer, one explicit grouping field, and returns one spatial layer containing one dissolved feature per group.',
               }}
               contract={{
                 title: `${presentation?.title ?? 'Grouped dissolve'} contract`,
@@ -4115,7 +4115,7 @@ function App() {
               }}
               warnings={toPanelWarnings(warnings)}
               output={{
-                body: presentation?.outputSemantics ?? 'Grouped dissolve v1 creates one derived spatial artifact that contains one polygon or multipolygon feature per distinct value of the selected grouping field. It preserves the selected grouping field only, preserves known stored CRS, and makes no broader dissolve or union claim.',
+                body: presentation?.outputSemantics ?? 'Grouped dissolve v1 creates one derived spatial layer that contains one polygon or multipolygon feature per distinct value of the selected grouping field. It preserves the selected grouping field only, preserves known stored CRS, and makes no broader dissolve or union claim.',
                 outputKind: presentation?.outputKind,
                 outputKindLabel: presentation?.outputKindLabel,
                 outputKindDescription: presentation?.outputKindDescription,
@@ -4164,9 +4164,9 @@ function App() {
               subtitle={`Measure polygon area for ${selectedArtifact.name} on the narrow area v1 path`}
               onCancel={() => setShowAreaDialog(false)}
               sourceSummary={{
-                label: 'Source artifact',
+                label: 'Source layer',
                 artifact: selectedArtifact,
-                description: 'Area v1 uses only the selected source artifact. It returns a measurement table rather than a geometry artifact.',
+                description: 'Area v1 uses only the selected source layer. It returns a measurement table rather than a geometry layer.',
                 extraText: `Stored CRS: ${selectedArtifact.crs ?? 'unknown'}`,
               }}
               contract={{
@@ -4180,7 +4180,7 @@ function App() {
               }}
               warnings={toPanelWarnings(warnings)}
               output={{
-                body: presentation?.outputSemantics ?? 'Area v1 creates a measurement table with one row per input feature, a numeric area value, and an explicit area unit. It does not create or pretend to create a new geometry artifact.',
+                body: presentation?.outputSemantics ?? 'Area v1 creates a measurement table with one row per input feature, a numeric area value, and an explicit area unit. It does not create or pretend to create a new geometry layer.',
                 outputKind: presentation?.outputKind,
                 outputKindLabel: presentation?.outputKindLabel,
                 outputKindDescription: presentation?.outputKindDescription,
@@ -4212,9 +4212,9 @@ function App() {
               subtitle={`Measure polygon perimeter for ${selectedArtifact.name} on the narrow perimeter v1 path`}
               onCancel={() => setShowPerimeterDialog(false)}
               sourceSummary={{
-                label: 'Source artifact',
+                label: 'Source layer',
                 artifact: selectedArtifact,
-                description: 'Perimeter v1 uses only the selected source artifact. It returns a measurement table rather than a geometry artifact.',
+                description: 'Perimeter v1 uses only the selected source layer. It returns a measurement table rather than a geometry layer.',
                 extraText: `Stored CRS: ${selectedArtifact.crs ?? 'unknown'}`,
               }}
               contract={{
@@ -4228,7 +4228,7 @@ function App() {
               }}
               warnings={toPanelWarnings(warnings)}
               output={{
-                body: presentation?.outputSemantics ?? 'Perimeter v1 creates a measurement table with one row per input feature, a numeric perimeter value, and an explicit perimeter unit. It does not create or pretend to create a new geometry artifact.',
+                body: presentation?.outputSemantics ?? 'Perimeter v1 creates a measurement table with one row per input feature, a numeric perimeter value, and an explicit perimeter unit. It does not create or pretend to create a new geometry layer.',
                 outputKind: presentation?.outputKind,
                 outputKindLabel: presentation?.outputKindLabel,
                 outputKindDescription: presentation?.outputKindDescription,
@@ -4260,9 +4260,9 @@ function App() {
               subtitle={`Measure polygon compactness for ${selectedArtifact.name} on the narrow compactness v1 path`}
               onCancel={() => setShowCompactnessDialog(false)}
               sourceSummary={{
-                label: 'Source artifact',
+                label: 'Source layer',
                 artifact: selectedArtifact,
-                description: 'Compactness v1 uses only the selected source artifact. It returns a measurement table rather than a geometry artifact.',
+                description: 'Compactness v1 uses only the selected source layer. It returns a measurement table rather than a geometry layer.',
                 extraText: `Stored CRS: ${selectedArtifact.crs ?? 'unknown'}`,
               }}
               contract={{
@@ -4276,7 +4276,7 @@ function App() {
               }}
               warnings={toPanelWarnings(warnings)}
               output={{
-                body: presentation?.outputSemantics ?? 'Compactness v1 creates a measurement table with one row per input feature, a numeric compactness value, and an explicit unit marker. It does not create or pretend to create a new geometry artifact.',
+                body: presentation?.outputSemantics ?? 'Compactness v1 creates a measurement table with one row per input feature, a numeric compactness value, and an explicit unit marker. It does not create or pretend to create a new geometry layer.',
                 outputKind: presentation?.outputKind,
                 outputKindLabel: presentation?.outputKindLabel,
                 outputKindDescription: presentation?.outputKindDescription,
@@ -4304,7 +4304,7 @@ function App() {
               severity: 'caution',
               scope: 'active',
               title: 'Stored CRS is not verified',
-              message: 'This artifact does not currently verify its stored CRS. Reprojection will use the source CRS you choose below; results will be wrong if that choice is false.',
+              message: 'This layer does not currently verify its stored CRS. Reprojection will use the source CRS you choose below; results will be wrong if that choice is false.',
             })
           }
           if (selectedArtifact.crs && selectedArtifact.crs !== 'unknown' && selectedArtifact.crs !== reprojectSourceCrs) {
@@ -4330,7 +4330,7 @@ function App() {
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label="Source artifact"
+                  label="Source layer"
                   artifact={selectedArtifact}
                   description="Reproject performs an explicit coordinate transformation, not a metadata relabel."
                 />
@@ -4348,11 +4348,11 @@ function App() {
                 <OperationContractDisplay
                   title={`${presentation?.title ?? 'Reproject'} contract`}
                   geometryStatement={presentation?.geometryStatement}
-                  crsStatement={presentation?.crsStatement ?? 'Reproject requires a real source CRS choice and writes the chosen target CRS onto the derived artifact. Display normalization to WGS84 remains display-only and does not mutate stored CRS.'}
+                  crsStatement={presentation?.crsStatement ?? 'Reproject requires a real source CRS choice and writes the chosen target CRS onto the derived layer. Display normalization to WGS84 remains display-only and does not mutate stored CRS.'}
                 />
 
                 <OperationOutputSemantics
-                  body={presentation?.outputSemantics ?? 'This operation creates a new derived artifact with transformed coordinates in the chosen target CRS. Metadata-only CRS assignment remains a separate future feature.'}
+                  body={presentation?.outputSemantics ?? 'This operation creates a new derived layer with transformed coordinates in the chosen target CRS. Metadata-only CRS assignment remains a separate future feature.'}
                   outputKind={presentation?.outputKind}
                   outputKindLabel={presentation?.outputKindLabel}
                   outputKindDescription={presentation?.outputKindDescription}
@@ -4394,13 +4394,13 @@ function App() {
 
                 <div>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={reprojectName}
                     onChange={(e) => setReprojectName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -4451,23 +4451,23 @@ function App() {
               <div className="row">
                 <div>
                   <h3 style={{ margin: 0 }}>Clip Operation</h3>
-                  <div className="muted small">Create a derived artifact by clipping {selectedArtifact.name} with a polygon mask</div>
+                  <div className="muted small">Create a derived layer by clipping {selectedArtifact.name} with a polygon mask</div>
                 </div>
                 <button className="secondary" onClick={() => setShowClipDialog(false)}>Cancel</button>
               </div>
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label={`Source artifact (${clipRoleContext.sourceLabel})`}
+                  label={`Source layer (${clipRoleContext.sourceLabel})`}
                   artifact={selectedArtifact}
-                  description="This is the artifact being clipped."
+                  description="This is the layer being clipped."
                 />
 
                 <div style={{ marginTop: 12 }}>
                   <OperationSecondarySelector
-                    label="Clip mask artifact"
+                    label="Clip mask layer"
                     value={clipMaskArtifactId}
-                    placeholder="Select a clip mask artifact..."
+                    placeholder="Select a clip mask layer..."
                     options={clipOptions}
                     onChange={setClipMaskArtifactId}
                   />
@@ -4475,9 +4475,9 @@ function App() {
 
                 {clipMaskArtifact && (
                   <OperationSourceSummary
-                    label={`Secondary artifact (${clipRoleContext.secondaryLabel})`}
+                    label={`Secondary layer (${clipRoleContext.secondaryLabel})`}
                     artifact={clipMaskArtifact}
-                    description="The mask constrains what survives from the source artifact."
+                    description="The mask constrains what survives from the source layer."
                   />
                 )}
 
@@ -4485,7 +4485,7 @@ function App() {
                   <OperationContractDisplay
                     title="Clip v1 contract"
                     geometryStatement="Clip v1 supports only Polygon or MultiPolygon geometries for both source and mask."
-                    crsStatement="Both artifacts must have known matching stored CRS. No auto-transform path is claimed here."
+                    crsStatement="Both layers must have known matching stored CRS. No auto-transform path is claimed here."
                     crsMatch={clipMaskArtifact ? {
                       label: 'Source stored CRS',
                       sourceCrs,
@@ -4505,10 +4505,10 @@ function App() {
                 </div>
 
                 <OperationOutputSemantics
-                  body="Clip creates a derived artifact in the same stored CRS as the validated inputs. No-overlap cases become honest empty results instead of failures."
+                  body="Clip creates a derived layer in the same stored CRS as the validated inputs. No-overlap cases become honest empty results instead of failures."
                   outputKind="spatial-artifact"
-                  outputKindLabel="Spatial artifact"
-                  outputKindDescription="This topology output is a geometry-bearing derived artifact rather than a measurement or table-only result."
+                  outputKindLabel="Spatial layer"
+                  outputKindDescription="This topology output is a geometry-bearing derived layer rather than a measurement or table-only result."
                 />
 
                 {refusalWarnings.length > 0 && (
@@ -4524,13 +4524,13 @@ function App() {
 
                 <div style={{ marginTop: 12 }}>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={clipName}
                     onChange={(e) => setClipName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -4565,7 +4565,7 @@ function App() {
             .map((field) => ({
               value: field,
               label: field,
-              description: leftFields.includes(field) ? `Will be written as join_${field} to avoid colliding with the left artifact.` : undefined,
+              description: leftFields.includes(field) ? `Will be written as join_${field} to avoid colliding with the left layer.` : undefined,
             }))
           const warnings: WarningRef[] = []
           if (attributeJoinArtifact && attributeJoinSelectedFields.length === 0) {
@@ -4585,7 +4585,7 @@ function App() {
               severity: 'blocking',
               scope: 'active',
               title: 'Right-side join key required',
-              message: 'Choose one explicit right-side join key. Attribute join v1 does not guess or infer a right-side key once the join artifact is selected.',
+              message: 'Choose one explicit right-side join key. Attribute join v1 does not guess or infer a right-side key once the join layer is selected.',
             })
           }
           if (attributeJoinArtifact && rightFields.length > 0 && rightFields.every((field) => field === attributeJoinSecondaryKey)) {
@@ -4595,7 +4595,7 @@ function App() {
               severity: 'blocking',
               scope: 'active',
               title: 'No carryable right-side fields remain',
-              message: 'The current right artifact exposes no non-key right-side fields to carry into the output on the shipped path. Pick a different right-side key or a different join artifact.',
+              message: 'The current right layer exposes no non-key right-side fields to carry into the output on the shipped path. Pick a different right-side key or a different join layer.',
             })
           }
 
@@ -4611,16 +4611,16 @@ function App() {
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label="Left artifact"
+                  label="Left layer"
                   artifact={selectedArtifact}
-                  description="This artifact stays on the left side of the join. Its output kind and geometry semantics are preserved."
+                  description="This layer stays on the left side of the join. Its output kind and geometry semantics are preserved."
                 />
 
                 <div style={{ marginTop: 12 }}>
                   <OperationSecondarySelector
-                    label="Join artifact"
+                    label="Join layer"
                     value={attributeJoinArtifactId}
-                    placeholder="Select a join artifact..."
+                    placeholder="Select a join layer..."
                     options={joinOptions}
                     onChange={(value) => {
                       setAttributeJoinArtifactId(value)
@@ -4643,9 +4643,9 @@ function App() {
 
                 {attributeJoinArtifact && (
                   <OperationSourceSummary
-                    label="Right artifact"
+                    label="Right layer"
                     artifact={attributeJoinArtifact}
-                    description="This artifact supplies lookup attributes only on the current shipped path. Its geometry is not consulted for the join predicate."
+                    description="This layer supplies lookup attributes only on the current shipped path. Its geometry is not consulted for the join predicate."
                   />
                 )}
 
@@ -4658,7 +4658,7 @@ function App() {
                 </div>
 
                 <OperationOutputSemantics
-                  body={presentation?.outputSemantics ?? 'The output preserves the left artifact while adding explicitly selected right-side fields only.'}
+                  body={presentation?.outputSemantics ?? 'The output preserves the left layer while adding explicitly selected right-side fields only.'}
                   outputKind={selectedArtifactOutputKind ?? getArtifactOutputKind(selectedArtifact)}
                   outputKindLabel={getArtifactOutputKindLabel(selectedArtifactOutputKind ?? getArtifactOutputKind(selectedArtifact))}
                   outputKindDescription={presentation?.outputKindDescription}
@@ -4705,7 +4705,7 @@ function App() {
                   options={selectedFieldOptions}
                   selectedValues={attributeJoinSelectedFields}
                   onToggle={(value) => setAttributeJoinSelectedFields((current) => current.includes(value) ? current.filter((field) => field !== value) : [...current, value])}
-                  emptyMessage={attributeJoinArtifact ? 'No selectable right-side fields remain after excluding the explicit right-side join key. Pick a different key or a different join artifact.' : 'Select a join artifact first.'}
+                  emptyMessage={attributeJoinArtifact ? 'No selectable right-side fields remain after excluding the explicit right-side join key. Pick a different key or a different join layer.' : 'Select a join layer first.'}
                 />
 
                 <div className="small muted" style={{ marginTop: 6 }}>
@@ -4716,13 +4716,13 @@ function App() {
 
                 <div style={{ marginTop: 12 }}>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={attributeJoinName}
                     onChange={(e) => setAttributeJoinName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -4780,16 +4780,16 @@ function App() {
 
               <div className="card" style={{ marginTop: 12 }}>
                 <OperationSourceSummary
-                  label={`Source artifact (${intersectRoleContext.sourceLabel})`}
+                  label={`Source layer (${intersectRoleContext.sourceLabel})`}
                   artifact={selectedArtifact}
                   description="This is the primary layer being intersected."
                 />
 
                 <div style={{ marginTop: 12 }}>
                   <OperationSecondarySelector
-                    label="Overlay artifact"
+                    label="Overlay layer"
                     value={overlayArtifactId}
-                    placeholder="Select an overlay artifact..."
+                    placeholder="Select an overlay layer..."
                     options={intersectOptions}
                     onChange={setOverlayArtifactId}
                   />
@@ -4797,7 +4797,7 @@ function App() {
 
                 {intersectOverlayArtifact && (
                   <OperationSourceSummary
-                    label={`Secondary artifact (${intersectRoleContext.secondaryLabel})`}
+                    label={`Secondary layer (${intersectRoleContext.secondaryLabel})`}
                     artifact={intersectOverlayArtifact}
                     description="The overlay defines which overlapping area survives in the output."
                   />
@@ -4806,8 +4806,8 @@ function App() {
                 <div style={{ marginTop: 12 }}>
                   <OperationContractDisplay
                     title="Intersect v1 contract"
-                    geometryStatement="Intersect v1 supports only Polygon or MultiPolygon source and overlay artifacts."
-                    crsStatement="Both artifacts must have known matching CRS. Intersect does not auto-transform and does not broaden beyond the current narrow v1 path."
+                    geometryStatement="Intersect v1 supports only Polygon or MultiPolygon source and overlay layers."
+                    crsStatement="Both layers must have known matching CRS. Intersect does not auto-transform and does not broaden beyond the current narrow v1 path."
                     crsMatch={intersectOverlayArtifact ? {
                       label: 'Source CRS',
                       sourceCrs,
@@ -4829,8 +4829,8 @@ function App() {
                 <OperationOutputSemantics
                   body="Intersect v1 preserves source attributes only. Overlay attributes are not merged on the shipped path, and no-overlap cases become honest empty results rather than failures."
                   outputKind="spatial-artifact"
-                  outputKindLabel="Spatial artifact"
-                  outputKindDescription="This topology output is a geometry-bearing derived artifact rather than a measurement or table-only result."
+                  outputKindLabel="Spatial layer"
+                  outputKindDescription="This topology output is a geometry-bearing derived layer rather than a measurement or table-only result."
                 />
 
                 {refusalWarnings.length > 0 && (
@@ -4846,13 +4846,13 @@ function App() {
 
                 <div style={{ marginTop: 12 }}>
                   <label style={{ display: 'block', marginBottom: 4 }}>
-                    <strong>Output artifact name</strong>
+                    <strong>Output layer name</strong>
                   </label>
                   <input
                     type="text"
                     value={intersectName}
                     onChange={(e) => setIntersectName(e.target.value)}
-                    placeholder="Enter artifact name..."
+                    placeholder="Enter layer name..."
                     style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                   />
                 </div>
@@ -4988,7 +4988,7 @@ function App() {
                   <div className="card danger" style={{ marginTop: 10 }}>
                     <strong>Render issue</strong>
                     <div className="small muted" style={{ marginTop: 6 }}>{selectedArtifact.renderIssue}</div>
-                    <div className="small" style={{ marginTop: 6 }}>The artifact still exists and remains queryable/tabular. Only the current map adaptation failed.</div>
+                    <div className="small" style={{ marginTop: 6 }}>The layer still exists and remains queryable/tabular. Only the current map adaptation failed.</div>
                   </div>
                 )}
               </div>
@@ -5066,7 +5066,7 @@ function App() {
                             </div>
                           </div>
                           <div className="small muted" style={{ marginTop: 6 }}>{displayWarning.message}</div>
-                          <div className="small" style={{ marginTop: 6 }}>This reflects the current map-framing runtime, not a persisted change to the artifact itself.</div>
+                          <div className="small" style={{ marginTop: 6 }}>This reflects the current map-framing runtime, not a persisted change to the layer itself.</div>
                         </div>
                       </div>
                     </div>
@@ -5105,7 +5105,7 @@ function App() {
                 </div>
                 {selectedArtifact.kind === 'source' ? (
                   <>
-                    <div className="small" style={{ marginTop: 8 }}>Imported into the workspace as a source artifact.</div>
+                    <div className="small" style={{ marginTop: 8 }}>Imported into the workspace as a source layer.</div>
                     {selectedArtifactOriginEvent && (
                       <div className="small muted" style={{ marginTop: 6 }}>
                         Created by: import event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}
@@ -5115,13 +5115,13 @@ function App() {
                 ) : (
                   <>
                     <div className="small" style={{ marginTop: 8 }}>
-                      Upstream artifact(s): {selectedArtifact.inputArtifactIds?.map((id) => artifacts.find((a) => a.id === id)?.name ?? id).join(', ') || 'unknown upstream artifact'}
+                      Upstream layer(s): {selectedArtifact.inputArtifactIds?.map((id) => artifacts.find((a) => a.id === id)?.name ?? id).join(', ') || 'unknown upstream layer'}
                     </div>
                     {selectedArtifactOriginEvent && (
                       <>
                         <div className="small muted" style={{ marginTop: 6 }}>Created by: {selectedArtifactOriginEvent.type} event on {formatTimestamp(selectedArtifactOriginEvent.timestamp)}</div>
                         <div className="small" style={{ marginTop: 8, color: '#cbd5e1' }}>
-                          This artifact's stored truth comes from the output of that event. Input assumptions and provenance notes remain inspectable in the event details below.
+                          This layer's stored truth comes from the output of that event. Input assumptions and provenance notes remain inspectable in the event details below.
                         </div>
                         {getHistoryDetailGroups(selectedArtifactOriginEvent.details).length > 0 && (
                           <div className="card" style={{ marginTop: 10 }}>
@@ -5384,7 +5384,7 @@ function App() {
               onPlanExecuted={(result) => {
                 if (result.success) {
                   setHistory(prev => [...prev, ...result.historyEvents])
-                  addToast(`Executed plan: ${result.artifacts.length} artifact(s) created`, 'success')
+                  addToast(`Executed plan: ${result.artifacts.length} layer(s) created`, 'success')
                   if (result.artifacts[0]) setSelectedArtifactId(result.artifacts[0].id)
                 } else {
                   addToast(`Plan failed: ${result.errors.join(', ')}`, 'error')
@@ -5462,9 +5462,9 @@ function App() {
                     ? 'This is a measurement table. Table and details stay coherent, but there is no map-focus contract because the output is intentionally non-spatial.'
                     : selectedArtifact.spatial && isFeatureCollection(selectedArtifact.data)
                       ? (selectedRowIndex !== null
-                          ? `Feature ${selectedRowIndex + 1} is selected. Map, table, and details are now focused on the same artifact context.`
-                          : 'No individual feature selected yet. Click a table row to focus one feature inside the selected artifact.')
-                      : 'This artifact is not currently map-synchronized. Table inspection still works, but feature-level map focus is unavailable.'}
+                          ? `Feature ${selectedRowIndex + 1} is selected. Map, table, and details are now focused on the same layer context.`
+                          : 'No individual feature selected yet. Click a table row to focus one feature inside the selected layer.')
+                      : 'This layer is not currently map-synchronized. Table inspection still works, but feature-level map focus is unavailable.'}
                 </div>
                 {selectedRowIndex !== null && (
                   <>
@@ -5501,7 +5501,7 @@ function App() {
               </thead>
               <tbody>
                 {rowsForSelected.length === 0 ? (
-                  <tr><td className="muted">Select or import a spatial artifact to inspect rows.</td></tr>
+                  <tr><td className="muted">Select or import a spatial layer to inspect rows.</td></tr>
                 ) : (
                   rowsForSelected.map((row, idx) => {
                     const isFocusedRow = selectedRowIndex === idx
@@ -5567,7 +5567,7 @@ function App() {
               <div className="card danger" style={{ marginTop: 12 }}>
                 <strong>Query failed</strong>
                 <div className="small muted" style={{ marginTop: 6 }}>{queryError}</div>
-                <div className="small" style={{ marginTop: 6 }}>Recovery: verify table names, SQL syntax, and that the referenced artifact tables are registered in the workspace.</div>
+                <div className="small" style={{ marginTop: 6 }}>Recovery: verify table names, SQL syntax, and that the referenced layer tables are registered in the workspace.</div>
               </div>
             )}
             <div className="actions">
@@ -5592,7 +5592,7 @@ function App() {
                     Referenced tables: {queryPreview.referencedTables?.length ? queryPreview.referencedTables.join(', ') : (queryPreview.sourceTableName || 'none detected')}
                   </div>
                   <div className="small muted" style={{ marginTop: 4 }}>
-                    Source artifacts matched: {queryPreview.sourceArtifactIds?.length ? queryPreview.sourceArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ') : 'none matched directly'}
+                    Source layers matched: {queryPreview.sourceArtifactIds?.length ? queryPreview.sourceArtifactIds.map((id) => artifacts.find((artifact) => artifact.id === id)?.name ?? id).join(', ') : 'none matched directly'}
                   </div>
                   {queryPreviewMaterializedOutputKind && (
                     <div className="small" style={{ marginTop: 6, color: '#cbd5e1' }}>
@@ -5605,24 +5605,24 @@ function App() {
                     </div>
                   )}
                   <div className="small muted" style={{ marginTop: 4 }}>
-                    This preview uses the same provenance-strength, output-kind, and persisted-artifact vocabulary that will be recorded if you materialize it.
+                    This preview uses the same provenance-strength, output-kind, and persisted-layer vocabulary that will be recorded if you materialize it.
                   </div>
                   
                   {/* Materialization naming dialog */}
                   {materializeStage === 'naming' && (
                     <div className="card" style={{ marginTop: 12, background: '#f0f9ff', border: '1px solid #0ea5e9' }}>
                       <div className="row">
-                        <strong>Name your derived artifact</strong>
+                        <strong>Name your derived layer</strong>
                       </div>
                       <div className="small muted" style={{ marginTop: 6 }}>
-                        Give this query result a name to save it as a derived artifact in your workspace.
+                        Give this query result a name to save it as a derived layer in your workspace.
                       </div>
                       <div style={{ marginTop: 12 }}>
                         <input
                           type="text"
                           value={derivedArtifactName}
                           onChange={(e) => setDerivedArtifactName(e.target.value)}
-                          placeholder="Enter artifact name..."
+                          placeholder="Enter layer name..."
                           style={{ width: '100%', padding: '8px', fontSize: '14px' }}
                           disabled={materializing}
                         />
@@ -5650,7 +5650,7 @@ function App() {
                   {materializeStage === 'idle' && !queryPreview.materializedArtifactId && (
                     <>
                       <div className="small muted" style={{ marginTop: 6 }}>
-                        This is still a preview. Materialize it to create a derived artifact.
+                        This is still a preview. Materialize it to create a derived layer.
                       </div>
                       <div className="actions">
                         <button className="primary" onClick={initiateMaterialization}>Materialize result</button>
@@ -5661,17 +5661,17 @@ function App() {
                   {/* Already materialized indicator */}
                   {queryPreview.materializedArtifactId && (
                     <div className="small muted" style={{ marginTop: 6 }}>
-                      ✓ Materialized as artifact. <button className="link" onClick={() => {
+                      ✓ Materialized as layer. <button className="link" onClick={() => {
                         const artifact = artifacts.find(a => a.id === queryPreview.materializedArtifactId)
                         if (artifact) setSelectedArtifactId(artifact.id)
-                      }}>View artifact</button> or re-run query to create a new one.
+                      }}>View layer</button> or re-run query to create a new one.
                     </div>
                   )}
                   
                   {/* Materializing indicator */}
                   {materializeStage === 'materializing' && (
                     <div className="small muted" style={{ marginTop: 6 }}>
-                      Creating derived artifact...
+                      Creating derived layer...
                     </div>
                   )}
                 </div>
