@@ -1,0 +1,110 @@
+{
+  "type": "FeatureCollection",
+  "name": "parcels",
+  "crs": {
+    "type": "name",
+    "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-001", "zone": "R1", "area_acres": 0.23, "owner": "Maria Gonzales" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8380, 39.7280],[-121.8370, 39.7280],[-121.8370, 39.7290],[-121.8380, 39.7290],[-121.8380, 39.7280]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-002", "zone": "R1", "area_acres": 0.25, "owner": "James Chen" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8370, 39.7280],[-121.8360, 39.7280],[-121.8360, 39.7290],[-121.8370, 39.7290],[-121.8370, 39.7280]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-003", "zone": "R1", "area_acres": 0.24, "owner": "Sarah Mitchell" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8360, 39.7280],[-121.8350, 39.7280],[-121.8350, 39.7290],[-121.8360, 39.7290],[-121.8360, 39.7280]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-004", "zone": "R1", "area_acres": 0.22, "owner": "Robert Thompson Trust" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8350, 39.7280],[-121.8340, 39.7280],[-121.8340, 39.7290],[-121.8350, 39.7290],[-121.8350, 39.7280]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-005", "zone": "C1", "area_acres": 0.31, "owner": "Downtown Properties LLC" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8380, 39.7270],[-121.8370, 39.7270],[-121.8370, 39.7280],[-121.8380, 39.7280],[-121.8380, 39.7270]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-006", "zone": "C1", "area_acres": 0.28, "owner": "Chico Commercial Holdings" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8370, 39.7270],[-121.8360, 39.7270],[-121.8360, 39.7280],[-121.8370, 39.7280],[-121.8370, 39.7270]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-007", "zone": "C1", "area_acres": 0.30, "owner": "Main Street Ventures Inc" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8360, 39.7270],[-121.8350, 39.7270],[-121.8350, 39.7280],[-121.8360, 39.7280],[-121.8360, 39.7270]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-008", "zone": "R2", "area_acres": 0.19, "owner": "Patricia Hernandez" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8350, 39.7270],[-121.8340, 39.7270],[-121.8340, 39.7280],[-121.8350, 39.7280],[-121.8350, 39.7270]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-009", "zone": "R2", "area_acres": 0.21, "owner": "David Kowalski" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8380, 39.7260],[-121.8370, 39.7260],[-121.8370, 39.7270],[-121.8380, 39.7270],[-121.8380, 39.7260]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-010", "zone": "R2", "area_acres": 0.20, "owner": "Linda Nakamura" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8370, 39.7260],[-121.8360, 39.7260],[-121.8360, 39.7270],[-121.8370, 39.7270],[-121.8370, 39.7260]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-011", "zone": "A5", "area_acres": 5.10, "owner": "Butte Valley Farming Co" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8420, 39.7300],[-121.8390, 39.7300],[-121.8390, 39.7320],[-121.8420, 39.7320],[-121.8420, 39.7300]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-012", "zone": "A5", "area_acres": 4.80, "owner": "Green Acres Land Trust" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8390, 39.7300],[-121.8360, 39.7300],[-121.8360, 39.7320],[-121.8390, 39.7320],[-121.8390, 39.7300]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-013", "zone": "A5", "area_acres": 6.20, "owner": "William & Donna Reed" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8420, 39.7280],[-121.8390, 39.7280],[-121.8390, 39.7300],[-121.8420, 39.7300],[-121.8420, 39.7280]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-014", "zone": "R1", "area_acres": 0.26, "owner": "Angela Morrison" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8340, 39.7280],[-121.8330, 39.7280],[-121.8330, 39.7290],[-121.8340, 39.7290],[-121.8340, 39.7280]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-015", "zone": "C1", "area_acres": 0.33, "owner": "Bidwell Investments Corp" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8340, 39.7270],[-121.8330, 39.7270],[-121.8330, 39.7280],[-121.8340, 39.7280],[-121.8340, 39.7270]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-016", "zone": "R2", "area_acres": 0.18, "owner": "Karen Liu" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8360, 39.7250],[-121.8350, 39.7250],[-121.8350, 39.7260],[-121.8360, 39.7260],[-121.8360, 39.7250]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-017", "zone": "R1", "area_acres": 0.24, "owner": "Michael O'Brien" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8350, 39.7250],[-121.8340, 39.7250],[-121.8340, 39.7260],[-121.8350, 39.7260],[-121.8350, 39.7250]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-018", "zone": "A5", "area_acres": 3.90, "owner": "Sierra Nevada Ranch LLC" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8420, 39.7260],[-121.8390, 39.7260],[-121.8390, 39.7280],[-121.8420, 39.7280],[-121.8420, 39.7260]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-019", "zone": "C1", "area_acres": 0.29, "owner": "HML Properties Trust" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8330, 39.7270],[-121.8320, 39.7270],[-121.8320, 39.7280],[-121.8330, 39.7280],[-121.8330, 39.7270]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "apn": "001-010-020", "zone": "R2", "area_acres": 0.22, "owner": "Thomas Watanabe" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-121.8340, 39.7260],[-121.8330, 39.7260],[-121.8330, 39.7270],[-121.8340, 39.7270],[-121.8340, 39.7260]]] }
+    }
+  ]
+}

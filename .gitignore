@@ -11,4 +11,6 @@ tsconfig.tsbuildinfo
 smoke-screenshots/
 screenshots/
 discovery/.venv/
+__pycache__/
+*.pyc
 node_modules/
