@@ -1,0 +1,17 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+pydantic>=2.6
+pydantic-settings>=2.2
+
+# Geospatial (lazy-imported in protocol clients so API boots without them)
+geopandas>=0.14
+shapely>=2.0
+pyproj>=3.6
+
+# STAC catalog access (lazy-imported in stac_sentinel2)
+pystac-client>=0.7
+planetary-computer>=1.0
+
+# Dev / tests
+pytest>=8.0
